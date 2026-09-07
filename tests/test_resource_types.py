@@ -7,6 +7,7 @@ from krowser.k8s.resource_types import (
 
 def test_resource_type_order_matches_spec():
     assert [rt.label for rt in RESOURCE_TYPES] == [
+        "Nodes",
         "ConfigMaps",
         "Secrets",
         "Ingresses",
@@ -24,6 +25,7 @@ def test_resource_type_order_matches_spec():
 
 def test_groups_match_spec():
     groups = {rt.label: rt.group for rt in RESOURCE_TYPES}
+    assert groups["Nodes"] == "Cluster"
     assert groups["ConfigMaps"] == "Config"
     assert groups["Secrets"] == "Config"
     assert groups["Ingresses"] == "Network"
@@ -34,9 +36,9 @@ def test_groups_match_spec():
     assert groups["Pods"] == "Workloads"
 
 
-def test_only_persistent_volumes_is_cluster_scoped():
+def test_cluster_scoped_resource_types():
     non_namespaced = [rt.id for rt in RESOURCE_TYPES if not rt.namespaced]
-    assert non_namespaced == ["storage/persistentvolumes"]
+    assert non_namespaced == ["cluster/nodes", "storage/persistentvolumes"]
 
 
 def test_get_resource_type_unknown_raises():

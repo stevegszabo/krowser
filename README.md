@@ -12,9 +12,9 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 
 ## Features
 
-- Browse 13 resource types grouped into **Config** (ConfigMaps, Secrets), **Network** (Ingresses, Services), **Storage** (PersistentVolumes, PersistentVolumeClaims), and **Workloads** (DaemonSets, Deployments, StatefulSets, CronJobs, Jobs, Pods)
+- Browse 13 resource types grouped into **Cluster** (Nodes), **Config** (ConfigMaps, Secrets), **Network** (Ingresses, Services), **Storage** (PersistentVolumes, PersistentVolumeClaims), and **Workloads** (DaemonSets, Deployments, StatefulSets, CronJobs, Jobs, Pods)
 - Filter by namespace (or view all namespaces at once) and by kubeconfig context
-- Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), and Service→EndpointSlice→Pod
+- Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), and Service→EndpointSlice→Pod (shown on Ingresses and Workloads views; the Services view itself lists just Services, with no expansion)
 - Click any node to open a resizable, read-only YAML pane for that resource, fetched fresh from the cluster
 - Auto-refreshes on a polling interval without resetting your pan/zoom or losing your current selection unless the underlying resource set actually changes
 - Read-only — no create/edit/delete/scale actions
@@ -55,18 +55,15 @@ pytest
 
 ## Project structure
 
-```
-krowser/
-  krowser/
-    main.py           # FastAPI app
-    config.py          # environment-driven settings
-    k8s/                # Kubernetes client wrapper, per-kind fetchers/getters, status/health logic
-    graph/               # relationship-derivation and graph-building logic
-    api/                  # HTTP routes
-  static/
-    index.html
-    css/
-    js/                 # Alpine.js components + Cytoscape.js graph rendering (no build step)
-    vendor/              # vendored JS dependencies (Alpine, Cytoscape + extensions)
-  tests/
-```
+| Path | Description |
+|---|---|
+| `krowser/main.py` | FastAPI app |
+| `krowser/config.py` | Environment-driven settings |
+| `krowser/k8s/` | Kubernetes client wrapper, per-kind fetchers/getters, status/health logic |
+| `krowser/graph/` | Relationship-derivation and graph-building logic |
+| `krowser/api/` | HTTP routes |
+| `static/index.html` | App shell |
+| `static/css/` | Styles |
+| `static/js/` | Alpine.js components + Cytoscape.js graph rendering (no build step) |
+| `static/vendor/` | Vendored JS dependencies (Alpine, Cytoscape + extensions) |
+| `tests/` | Test suite |

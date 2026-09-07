@@ -161,6 +161,32 @@ def make_pv():
 
 
 @pytest.fixture
+def make_node():
+    def _make(uid, name, ready="True", unschedulable=False, kubelet_version="v1.30.0"):
+        return k8s.V1Node(
+            metadata=_meta(uid, name, namespace=None),
+            spec=k8s.V1NodeSpec(unschedulable=unschedulable),
+            status=k8s.V1NodeStatus(
+                conditions=[k8s.V1NodeCondition(type="Ready", status=ready)],
+                node_info=k8s.V1NodeSystemInfo(
+                    kubelet_version=kubelet_version,
+                    architecture="amd64",
+                    boot_id="boot-1",
+                    container_runtime_version="containerd://1.7.0",
+                    kernel_version="6.8.0",
+                    kube_proxy_version="v1.30.0",
+                    machine_id="machine-1",
+                    operating_system="linux",
+                    os_image="Ubuntu 24.04",
+                    system_uuid="uuid-1",
+                ),
+            ),
+        )
+
+    return _make
+
+
+@pytest.fixture
 def make_config_map():
     def _make(uid, name, namespace="ns", data=None):
         return k8s.V1ConfigMap(

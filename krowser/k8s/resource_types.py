@@ -15,6 +15,7 @@ class ResourceTypeSpec:
 # entries sharing a `group` render under one group header on the frontend;
 # entries with `group=None` render as flat top-level rows.
 RESOURCE_TYPES: list[ResourceTypeSpec] = [
+    ResourceTypeSpec("cluster/nodes", "Nodes", "Cluster", "node", False, "Node"),
     ResourceTypeSpec("configmaps", "ConfigMaps", "Config", "configmap", True, "ConfigMap"),
     ResourceTypeSpec("secrets", "Secrets", "Config", "secret", True, "Secret"),
     ResourceTypeSpec("network/ingresses", "Ingresses", "Network", "ingress", True, "Ingress"),

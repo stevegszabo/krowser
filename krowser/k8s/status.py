@@ -240,6 +240,28 @@ def _describe_endpoint_slice(obj: Any) -> tuple[Health, str, str | None, list[Ba
     return health, status_label, ready, [Badge(text=status_label, variant="ready")]
 
 
+def _describe_node(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    conditions = obj.status.conditions or []
+    ready_cond = next((c for c in conditions if c.type == "Ready"), None)
+    unschedulable = bool(obj.spec.unschedulable)
+
+    if ready_cond is None or ready_cond.status == "Unknown":
+        health: Health = "unknown"
+        status_label = "Unknown"
+    elif ready_cond.status == "True":
+        health = "suspended" if unschedulable else "healthy"
+        status_label = "Cordoned" if unschedulable else "Ready"
+    else:
+        health = "degraded"
+        status_label = "NotReady"
+
+    badges = [Badge(text=status_label, variant="status")]
+    node_info = obj.status.node_info
+    if node_info and node_info.kubelet_version:
+        badges.append(Badge(text=node_info.kubelet_version, variant="misc"))
+    return health, status_label, None, badges
+
+
 _DESCRIBERS = {
     "Pod": _describe_pod,
     "Deployment": lambda obj: _describe_replica_style(obj, "ready_replicas"),
@@ -255,6 +277,7 @@ _DESCRIBERS = {
     "ConfigMap": _describe_config_map,
     "Secret": _describe_secret,
     "EndpointSlice": _describe_endpoint_slice,
+    "Node": _describe_node,
 }
 
 

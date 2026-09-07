@@ -45,7 +45,7 @@ def test_resource_types_endpoint_returns_fixed_order(client):
     res = client.get("/api/resource-types")
     assert res.status_code == 200
     ids = [rt["id"] for rt in res.json()["resource_types"]]
-    assert ids[0] == "configmaps"
+    assert ids[0] == "cluster/nodes"
     assert ids[-1] == "workloads/pods"
 
 

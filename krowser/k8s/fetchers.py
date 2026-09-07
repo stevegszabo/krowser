@@ -70,6 +70,12 @@ def list_persistent_volumes(mgr: KubeClientManager, context: str | None) -> list
     return _call("PersistentVolume", api.list_persistent_volume)
 
 
+def list_nodes(mgr: KubeClientManager, context: str | None) -> list[Any]:
+    # Cluster-scoped: no namespace variant exists.
+    api = mgr.core_v1(context)
+    return _call("Node", api.list_node)
+
+
 def list_deployments(mgr: KubeClientManager, context: str | None, namespace: str | None) -> list[Any]:
     api = mgr.apps_v1(context)
     if namespace:
@@ -165,6 +171,7 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "Secret": list_secrets,
     "PersistentVolumeClaim": list_persistent_volume_claims,
     "PersistentVolume": lambda mgr, context, namespace: list_persistent_volumes(mgr, context),
+    "Node": lambda mgr, context, namespace: list_nodes(mgr, context),
     "Deployment": list_deployments,
     "StatefulSet": list_stateful_sets,
     "DaemonSet": list_daemon_sets,

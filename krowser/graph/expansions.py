@@ -14,9 +14,10 @@ WORKLOAD_RELATED_KINDS = (
 
 # Keyed by left-pane resource-type id (krowser.k8s.resource_types.RESOURCE_TYPES).
 GRAPH_EXPANSIONS: dict[str, GraphExpansion] = {
+    "cluster/nodes": GraphExpansion(()),
     "configmaps": GraphExpansion(()),
     "network/ingresses": GraphExpansion(("Service", "Pod", "EndpointSlice")),
-    "network/services": GraphExpansion(("Pod", "EndpointSlice")),
+    "network/services": GraphExpansion(()),
     "secrets": GraphExpansion(()),
     "storage/persistentvolumes": GraphExpansion(("PersistentVolumeClaim",)),
     "storage/persistentvolumeclaims": GraphExpansion(("PersistentVolume", "Pod")),

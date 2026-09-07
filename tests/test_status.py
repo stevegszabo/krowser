@@ -47,3 +47,20 @@ def test_pvc_phase_health_mapping(make_pvc):
     lost = build_node(make_pvc("p3", "d3", phase="Lost"), "PersistentVolumeClaim", "pvc", True)
 
     assert (bound.health, pending.health, lost.health) == ("healthy", "progressing", "degraded")
+
+
+def test_node_condition_health_mapping(make_node):
+    ready = build_node(make_node("n1", "worker-1", ready="True"), "Node", "node", True)
+    not_ready = build_node(make_node("n2", "worker-2", ready="False"), "Node", "node", True)
+    unknown = build_node(make_node("n3", "worker-3", ready="Unknown"), "Node", "node", True)
+    cordoned = build_node(
+        make_node("n4", "worker-4", ready="True", unschedulable=True), "Node", "node", True
+    )
+
+    assert (ready.health, not_ready.health, unknown.health, cordoned.health) == (
+        "healthy",
+        "degraded",
+        "unknown",
+        "suspended",
+    )
+    assert (ready.status_label, cordoned.status_label) == ("Ready", "Cordoned")

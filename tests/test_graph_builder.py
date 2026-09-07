@@ -10,7 +10,7 @@ from krowser.graph.builder import GraphBuilder
 ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
-    "EndpointSlice",
+    "EndpointSlice", "Node",
 ]
 
 
@@ -152,6 +152,31 @@ def test_services_root_includes_all_service_types(monkeypatch, make_service):
     graph = GraphBuilder(mgr=None).build("network/services", namespace="ns", context=None)
 
     assert {n.id for n in graph.nodes} == {"svc-lb", "svc-cip"}
+
+
+def test_services_have_no_edges(monkeypatch, make_service, make_endpoint_slice, make_pod):
+    svc = make_service("svc-1", "web", selector={"app": "web"})
+    pod = make_pod("pod-1", "web-abc")
+    eps = make_endpoint_slice(
+        "eps-1", "web-xyz", service_name="web", pod_targets=[("web-abc", "pod-1", True)]
+    )
+    _patch_fetchers(monkeypatch, {"Service": [svc], "EndpointSlice": [eps], "Pod": [pod]})
+
+    graph = GraphBuilder(mgr=None).build("network/services", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"svc-1"}
+    assert graph.edges == []
+
+
+def test_nodes_have_no_edges(monkeypatch, make_node):
+    node_a = make_node("node-1", "worker-1")
+    node_b = make_node("node-2", "worker-2", ready="False")
+    _patch_fetchers(monkeypatch, {"Node": [node_a, node_b]})
+
+    graph = GraphBuilder(mgr=None).build("cluster/nodes", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"node-1", "node-2"}
+    assert graph.edges == []
 
 
 def test_persistent_volumes_filtered_to_namespace_bound_claim(monkeypatch, make_pv):

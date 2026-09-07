@@ -45,6 +45,11 @@ def get_persistent_volume(mgr: KubeClientManager, context: str | None, name: str
     return _get("PersistentVolume", mgr.core_v1(context).read_persistent_volume, name)
 
 
+def get_node(mgr: KubeClientManager, context: str | None, name: str) -> Any:
+    # Cluster-scoped: no namespace variant exists.
+    return _get("Node", mgr.core_v1(context).read_node, name)
+
+
 def get_deployment(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
     return _get("Deployment", mgr.apps_v1(context).read_namespaced_deployment, name, namespace)
 
@@ -89,6 +94,7 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "Secret": get_secret,
     "PersistentVolumeClaim": get_persistent_volume_claim,
     "PersistentVolume": lambda mgr, context, namespace, name: get_persistent_volume(mgr, context, name),
+    "Node": lambda mgr, context, namespace, name: get_node(mgr, context, name),
     "Deployment": get_deployment,
     "StatefulSet": get_stateful_set,
     "DaemonSet": get_daemon_set,
