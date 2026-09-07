@@ -27,7 +27,9 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 ## Quick start
 
 ```bash
-pip install -e ".[dev]"
+python3 -m venv .venv
+source .venv/bin/activate   # on Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ./run.sh
 ```
 
@@ -44,9 +46,10 @@ Environment variables:
 
 ## Development
 
-Run the test suite:
+Install the test tooling on top of the runtime dependencies, then run the test suite:
 
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
 

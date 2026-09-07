@@ -1,0 +1,6 @@
+# Mirrors pyproject.toml's [project.dependencies] -- keep both in sync.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+kubernetes==30.1.0
+pydantic==2.13.5
+PyYAML==6.0.3
