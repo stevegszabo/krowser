@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>krowser</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app" x-data="appRoot()" x-init="init()" @select-type.window="onTypeSelect($event.detail)">
+
+    <header class="krw-topbar">
+      <div class="krw-brand">krowser</div>
+      <div class="krw-topbar-spacer"></div>
+
+      <div class="krw-field">
+        <label for="krw-context">Context</label>
+        <select id="krw-context" x-model="$store.app.context" @change="onContextChange()">
+          <template x-for="ctx in $store.app.contexts" :key="ctx.name">
+            <option :value="ctx.name" x-text="ctx.name"></option>
+          </template>
+        </select>
+      </div>
+
+      <div class="krw-field">
+        <label for="krw-namespace">Namespace</label>
+        <select id="krw-namespace" x-model="$store.app.namespace" @change="onNamespaceChange()">
+          <option value="">All namespaces</option>
+          <template x-for="ns in $store.app.namespaces" :key="ns">
+            <option :value="ns" x-text="ns"></option>
+          </template>
+        </select>
+      </div>
+
+      <button class="krw-refresh-btn" @click="refresh()">Refresh</button>
+      <span class="krw-last-updated" x-show="$store.app.lastUpdated" x-text="$store.app.lastUpdated ? 'Updated ' + $store.app.lastUpdated.toLocaleTimeString() : ''"></span>
+    </header>
+
+    <div class="krw-main">
+      <nav class="krw-left-pane" x-data="resourceList()">
+        <template x-for="group in groupedTypes" :key="group.group || group.items[0].id">
+          <div>
+            <div class="krw-group-header" x-show="group.group" x-text="group.group"></div>
+            <template x-for="rt in group.items" :key="rt.id">
+              <div
+                class="krw-type-row"
+                :class="{ selected: $store.app.selectedType === rt.id }"
+                @click="select(rt.id)"
+              >
+                <span x-html="window.ICONS[rt.icon] || window.ICONS.default"></span>
+                <span x-text="rt.label"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+      </nav>
+
+      <main class="krw-right-pane" x-data="graphView()" x-init="init()">
+        <div class="krw-graph-canvas" x-ref="canvas"></div>
+
+        <div class="krw-toolbar">
+          <button @click="fit()" title="Fit to screen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3H4v5M15 3h5v5M9 21H4v-5M15 21h5v-5"/></svg>
+          </button>
+          <div class="krw-toolbar-sep"></div>
+          <button @click="togglePan()" :class="{ active: panMode }" title="Pan mode">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M2 12h20M5 5l-2 2 2 2M19 5l2 2-2 2M5 19l-2-2 2-2M19 19l2-2-2-2"/></svg>
+          </button>
+          <div class="krw-toolbar-sep"></div>
+          <button @click="zoomOut()" title="Zoom out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="7"/><path d="M21 21l-5.5-5.5M7 10h6"/></svg>
+          </button>
+          <span class="krw-zoom-pct" x-text="zoomPct + '%'"></span>
+          <button @click="zoomIn()" title="Zoom in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="7"/><path d="M21 21l-5.5-5.5M10 7v6M7 10h6"/></svg>
+          </button>
+        </div>
+
+        <template x-if="$store.app.error">
+          <div class="krw-error-banner">
+            <span x-text="$store.app.error"></span>
+            <button @click="$store.app.error = null" title="Dismiss">&times;</button>
+          </div>
+        </template>
+
+        <template x-if="$store.app.graph && $store.app.graph.truncated">
+          <div class="krw-truncated-banner">
+            Showing <span x-text="$store.app.graph.nodes.filter(n => n.is_root).length"></span> of
+            <span x-text="$store.app.graph.resource_count"></span> &mdash; pick a namespace to see everything.
+          </div>
+        </template>
+
+        <template x-if="!$store.app.loading && $store.app.graph && $store.app.graph.nodes.length === 0">
+          <div class="krw-overlay-center">
+            <div class="krw-empty-state">No matching resources found.</div>
+          </div>
+        </template>
+      </main>
+
+      <template x-if="$store.app.selectedResource">
+        <aside
+          class="krw-detail-pane"
+          x-data="resourcePanel()"
+          x-init="init()"
+          :style="{ width: $store.app.detailPaneWidth + 'px' }"
+        >
+          <div
+            class="krw-detail-resize-handle"
+            :class="{ resizing: resizing }"
+            @mousedown="startResize($event)"
+          ></div>
+          <div class="krw-detail-header">
+            <div class="krw-detail-title">
+              <span class="krw-detail-kind" x-text="$store.app.selectedResource.kind"></span>
+              <span class="krw-detail-name" x-text="$store.app.selectedResource.name"></span>
+            </div>
+            <button class="krw-detail-close" @click="close()" title="Close">&times;</button>
+          </div>
+          <div class="krw-detail-body">
+            <template x-if="loading">
+              <div class="krw-detail-message">Loading&hellip;</div>
+            </template>
+            <template x-if="error">
+              <div class="krw-detail-message krw-detail-error" x-text="error"></div>
+            </template>
+            <template x-if="!loading && !error">
+              <pre class="krw-yaml" x-text="yamlText"></pre>
+            </template>
+          </div>
+        </aside>
+      </template>
+    </div>
+  </div>
+
+  <script src="vendor/cytoscape/cytoscape.min.js"></script>
+  <script src="vendor/cytoscape/cytoscape-dagre.js"></script>
+  <script src="vendor/cytoscape/cytoscape-node-html-label.js"></script>
+  <script src="js/icons.js"></script>
+  <script>window.ICONS = ICONS;</script>
+  <script src="js/api.js"></script>
+  <script src="js/cardTemplate.js"></script>
+  <script src="js/resourceList.js"></script>
+  <script src="js/resourcePanel.js"></script>
+  <script src="js/graphView.js"></script>
+  <script src="js/app.js"></script>
+  <script defer src="vendor/alpinejs/alpine.min.js"></script>
+</body>
+</html>
