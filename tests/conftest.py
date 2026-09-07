@@ -185,7 +185,7 @@ def make_secret():
 
 @pytest.fixture
 def make_endpoint_slice():
-    def _make(uid, name, namespace="ns", service_name=None, pod_targets=()):
+    def _make(uid, name, namespace="ns", service_name=None, pod_targets=(), owner_refs=None):
         labels = {"kubernetes.io/service-name": service_name} if service_name else {}
         endpoints = [
             k8s.V1Endpoint(
@@ -196,7 +196,7 @@ def make_endpoint_slice():
             for pod_name, pod_uid, ready in pod_targets
         ]
         return k8s.V1EndpointSlice(
-            metadata=_meta(uid, name, namespace, labels=labels),
+            metadata=_meta(uid, name, namespace, owner_refs, labels),
             address_type="IPv4",
             endpoints=endpoints,
             ports=[],

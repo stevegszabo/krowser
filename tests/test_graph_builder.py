@@ -110,7 +110,6 @@ def test_deployment_graph_includes_used_service_configmap_secret_pvc(
     assert "cm-2" not in node_ids
 
     relations = {(e.source, e.target, e.relation) for e in graph.edges}
-    assert ("svc-1", "pod-1", "selects") in relations
     assert ("pod-1", "cm-1", "uses") in relations
     assert ("pod-1", "secret-1", "uses") in relations
     assert ("pod-1", "pvc-1", "claims") in relations

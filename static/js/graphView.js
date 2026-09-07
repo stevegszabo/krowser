@@ -1,6 +1,5 @@
 const RELATION_LABEL = {
   owns: 'owns',
-  selects: 'selects',
   'routes-to': 'routes to',
   claims: 'claims',
   binds: 'binds',
@@ -54,7 +53,6 @@ function graphView() {
         layout: { name: 'preset' },
         boxSelectionEnabled: false,
         autounselectify: true,
-        autoungrabify: true,
       });
 
       this.cy.nodeHtmlLabel([

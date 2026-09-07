@@ -22,43 +22,29 @@ def _all_objects(world: World):
 def link_owner_references(world: World) -> list[GraphEdge]:
     """Covers Deployment->ReplicaSet, ReplicaSet->Pod, DaemonSet->Pod,
     StatefulSet->Pod, CronJob->Job, Job->Pod uniformly, since Kubernetes sets
-    ownerReferences the same way across all of these."""
+    ownerReferences the same way across all of these.
+
+    EndpointSlice objects also carry a real ownerReference back to their
+    Service, but that relationship already has its own, more descriptive
+    edge (link_service_to_endpointslices, "exposes") -- so EndpointSlice is
+    excluded here as a child to avoid a duplicate "owns" edge alongside it.
+    """
     uid_index = {obj.metadata.uid for obj in _all_objects(world)}
     edges = []
-    for obj in _all_objects(world):
-        for owner_ref in obj.metadata.owner_references or []:
-            if owner_ref.uid in uid_index:
-                edges.append(
-                    GraphEdge(
-                        id=f"owns:{owner_ref.uid}:{obj.metadata.uid}",
-                        source=owner_ref.uid,
-                        target=obj.metadata.uid,
-                        relation="owns",
-                    )
-                )
-    return edges
-
-
-def link_service_to_pods(world: World) -> list[GraphEdge]:
-    edges = []
-    for svc in world.get("Service", []):
-        selector = svc.spec.selector or {}
-        if not selector:
+    for kind, objs in world.items():
+        if kind == "EndpointSlice":
             continue
-        selector_items = selector.items()
-        for pod in world.get("Pod", []):
-            if pod.metadata.namespace != svc.metadata.namespace:
-                continue
-            labels = pod.metadata.labels or {}
-            if selector_items <= labels.items():
-                edges.append(
-                    GraphEdge(
-                        id=f"selects:{svc.metadata.uid}:{pod.metadata.uid}",
-                        source=svc.metadata.uid,
-                        target=pod.metadata.uid,
-                        relation="selects",
+        for obj in objs:
+            for owner_ref in obj.metadata.owner_references or []:
+                if owner_ref.uid in uid_index:
+                    edges.append(
+                        GraphEdge(
+                            id=f"owns:{owner_ref.uid}:{obj.metadata.uid}",
+                            source=owner_ref.uid,
+                            target=obj.metadata.uid,
+                            relation="owns",
+                        )
                     )
-                )
     return edges
 
 
@@ -261,7 +247,6 @@ def link_endpointslice_to_pods(world: World) -> list[GraphEdge]:
 
 LINKERS = [
     link_owner_references,
-    link_service_to_pods,
     link_ingress_to_services,
     link_pod_to_pvc,
     link_pvc_to_pv,

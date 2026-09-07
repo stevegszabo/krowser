@@ -10,7 +10,6 @@ from krowser.graph.relationships import (
     link_pod_to_secret,
     link_pvc_to_pv,
     link_service_to_endpointslices,
-    link_service_to_pods,
 )
 
 
@@ -40,22 +39,21 @@ def test_owner_references_ignores_dangling_owner_not_in_world(make_replica_set):
     assert edges == []
 
 
-def test_service_selects_matching_pods_only(make_service, make_pod):
-    svc = make_service("svc-1", "web", selector={"app": "web"})
-    matching_pod = make_pod("pod-1", "web-1", labels={"app": "web", "extra": "x"})
-    other_ns_pod = make_pod("pod-2", "web-2", namespace="other", labels={"app": "web"})
-    non_matching_pod = make_pod("pod-3", "web-3", labels={"app": "different"})
+def test_owner_references_excludes_endpointslice_to_avoid_duplicate_exposes_edge(
+    make_service, make_endpoint_slice
+):
+    # Real EndpointSlices carry an ownerReference back to their Service, but
+    # that relationship already has its own "exposes" edge -- link_owner_references
+    # must not also emit a duplicate "owns" edge for the same pair.
+    svc = make_service("svc-1", "web")
+    eps = make_endpoint_slice(
+        "eps-1", "web-abcde",
+        service_name="web",
+        owner_refs=[k8s.V1OwnerReference(kind="Service", name="web", uid="svc-1", api_version="v1")],
+    )
 
-    world = {"Service": [svc], "Pod": [matching_pod, other_ns_pod, non_matching_pod]}
-    edges = link_service_to_pods(world)
+    edges = link_owner_references({"Service": [svc], "EndpointSlice": [eps]})
 
-    assert [(e.source, e.target) for e in edges] == [("svc-1", "pod-1")]
-
-
-def test_service_with_no_selector_links_nothing(make_service, make_pod):
-    svc = make_service("svc-1", "headless", selector={})
-    pod = make_pod("pod-1", "any", labels={"app": "web"})
-    edges = link_service_to_pods({"Service": [svc], "Pod": [pod]})
     assert edges == []
 
 
@@ -315,7 +313,6 @@ def test_build_edges_chains_service_endpointslice_pod(make_service, make_endpoin
     edges = build_edges(world)
 
     assert {(e.source, e.target, e.relation) for e in edges} == {
-        ("svc-1", "pod-1", "selects"),
         ("svc-1", "eps-1", "exposes"),
         ("eps-1", "pod-1", "targets"),
     }
