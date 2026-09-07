@@ -16,6 +16,9 @@ class ResourceTypeSpec:
 # entries with `group=None` render as flat top-level rows.
 RESOURCE_TYPES: list[ResourceTypeSpec] = [
     ResourceTypeSpec("cluster/nodes", "Nodes", "Cluster", "node", False, "Node"),
+    ResourceTypeSpec(
+        "cluster/crds", "CustomResourceDefinitions", "Cluster", "crd", False, "CustomResourceDefinition"
+    ),
     ResourceTypeSpec("configmaps", "ConfigMaps", "Config", "configmap", True, "ConfigMap"),
     ResourceTypeSpec("secrets", "Secrets", "Config", "secret", True, "Secret"),
     ResourceTypeSpec("network/ingresses", "Ingresses", "Network", "ingress", True, "Ingress"),

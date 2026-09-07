@@ -262,6 +262,34 @@ def _describe_node(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     return health, status_label, None, badges
 
 
+def _describe_crd(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    conditions = obj.status.conditions or []
+    terminating = next((c for c in conditions if c.type == "Terminating"), None)
+    established = next((c for c in conditions if c.type == "Established"), None)
+
+    if terminating is not None and terminating.status == "True":
+        health: Health = "suspended"
+        status_label = "Terminating"
+    elif established is None or established.status == "Unknown":
+        health = "unknown"
+        status_label = "Unknown"
+    elif established.status == "True":
+        health = "healthy"
+        status_label = "Established"
+    else:
+        health = "progressing"
+        status_label = "Pending"
+
+    badges = [Badge(text=status_label, variant="status")]
+    if obj.spec.scope:
+        badges.append(Badge(text=obj.spec.scope, variant="misc"))
+    versions = obj.spec.versions or []
+    if versions:
+        version_names = ",".join(v.name for v in versions[:3])
+        badges.append(Badge(text=version_names, variant="misc"))
+    return health, status_label, None, badges
+
+
 _DESCRIBERS = {
     "Pod": _describe_pod,
     "Deployment": lambda obj: _describe_replica_style(obj, "ready_replicas"),
@@ -278,6 +306,7 @@ _DESCRIBERS = {
     "Secret": _describe_secret,
     "EndpointSlice": _describe_endpoint_slice,
     "Node": _describe_node,
+    "CustomResourceDefinition": _describe_crd,
 }
 
 

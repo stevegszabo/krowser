@@ -187,6 +187,25 @@ def make_node():
 
 
 @pytest.fixture
+def make_crd():
+    def _make(uid, name, group="example.com", plural="widgets", kind="Widget", established="True"):
+        return k8s.V1CustomResourceDefinition(
+            metadata=_meta(uid, name, namespace=None),
+            spec=k8s.V1CustomResourceDefinitionSpec(
+                group=group,
+                scope="Namespaced",
+                names=k8s.V1CustomResourceDefinitionNames(kind=kind, plural=plural),
+                versions=[k8s.V1CustomResourceDefinitionVersion(name="v1", served=True, storage=True)],
+            ),
+            status=k8s.V1CustomResourceDefinitionStatus(
+                conditions=[k8s.V1CustomResourceDefinitionCondition(type="Established", status=established)]
+            ),
+        )
+
+    return _make
+
+
+@pytest.fixture
 def make_config_map():
     def _make(uid, name, namespace="ns", data=None):
         return k8s.V1ConfigMap(

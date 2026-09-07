@@ -64,3 +64,12 @@ def test_node_condition_health_mapping(make_node):
         "suspended",
     )
     assert (ready.status_label, cordoned.status_label) == ("Ready", "Cordoned")
+
+
+def test_crd_condition_health_mapping(make_crd):
+    established = build_node(make_crd("c1", "widgets.example.com", established="True"), "CustomResourceDefinition", "crd", True)
+    pending = build_node(make_crd("c2", "gadgets.example.com", established="False"), "CustomResourceDefinition", "crd", True)
+    unknown = build_node(make_crd("c3", "gizmos.example.com", established="Unknown"), "CustomResourceDefinition", "crd", True)
+
+    assert (established.health, pending.health, unknown.health) == ("healthy", "progressing", "unknown")
+    assert established.status_label == "Established"

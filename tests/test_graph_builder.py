@@ -10,7 +10,7 @@ from krowser.graph.builder import GraphBuilder
 ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
-    "EndpointSlice", "Node",
+    "EndpointSlice", "Node", "CustomResourceDefinition",
 ]
 
 
@@ -176,6 +176,17 @@ def test_nodes_have_no_edges(monkeypatch, make_node):
     graph = GraphBuilder(mgr=None).build("cluster/nodes", namespace="ns", context=None)
 
     assert {n.id for n in graph.nodes} == {"node-1", "node-2"}
+    assert graph.edges == []
+
+
+def test_crds_have_no_edges(monkeypatch, make_crd):
+    crd_a = make_crd("crd-1", "widgets.example.com")
+    crd_b = make_crd("crd-2", "gadgets.example.com", established="False")
+    _patch_fetchers(monkeypatch, {"CustomResourceDefinition": [crd_a, crd_b]})
+
+    graph = GraphBuilder(mgr=None).build("cluster/crds", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"crd-1", "crd-2"}
     assert graph.edges == []
 
 
