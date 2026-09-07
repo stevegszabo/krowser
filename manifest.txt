@@ -1,0 +1,9 @@
+.gitignore
+krowser/
+static/
+tests/
+*.png
+*.toml
+*.md
+*.txt
+*.sh
