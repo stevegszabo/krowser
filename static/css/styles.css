@@ -1,10 +1,10 @@
 :root {
-  --teal: #0f8a72;
-  --teal-dark: #0b6c59;
-  --mint-bg: #dff2ee;
-  --ink: #1c2b28;
-  --ink-soft: #5b6b68;
-  --line: #d8e6e2;
+  --teal: #326ce5;
+  --teal-dark: #234ca0;
+  --mint-bg: #eaf1fc;
+  --ink: #212529;
+  --ink-soft: #6c757d;
+  --line: #dee2e6;
   --card-bg: #ffffff;
   --healthy: #2fae60;
   --progressing: #e2a33d;
@@ -118,9 +118,9 @@ html, body {
   border-left: 3px solid transparent;
   color: var(--ink);
 }
-.krw-type-row:hover { background: #f3f9f7; }
+.krw-type-row:hover { background: #eef3fc; }
 .krw-type-row.selected {
-  background: #e7f5f1;
+  background: #e3ebfb;
   border-left-color: var(--teal);
   color: var(--teal-dark);
   font-weight: 600;
@@ -149,7 +149,7 @@ html, body {
   gap: 2px;
   background: #fff;
   border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(20, 40, 35, 0.15);
+  box-shadow: 0 1px 4px rgba(33, 37, 41, 0.15);
   padding: 4px;
   z-index: 5;
 }
@@ -166,8 +166,8 @@ html, body {
   justify-content: center;
   color: var(--ink-soft);
 }
-.krw-toolbar button:hover { background: #eef6f4; color: var(--teal-dark); }
-.krw-toolbar button.active { background: #e7f5f1; color: var(--teal-dark); }
+.krw-toolbar button:hover { background: #eef3fc; color: var(--teal-dark); }
+.krw-toolbar button.active { background: #e3ebfb; color: var(--teal-dark); }
 .krw-toolbar svg { width: 16px; height: 16px; }
 
 .krw-zoom-pct {
@@ -251,7 +251,7 @@ html, body {
   gap: 8px;
   background: var(--card-bg);
   border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(20, 40, 35, 0.12);
+  box-shadow: 0 1px 3px rgba(33, 37, 41, 0.12);
   padding: 8px 10px;
   border: 1.5px solid transparent;
 }
@@ -262,7 +262,7 @@ html, body {
 
 .krw-card.is-selected {
   border-color: var(--teal-dark);
-  box-shadow: 0 0 0 2px rgba(15, 138, 114, 0.25), 0 1px 3px rgba(20, 40, 35, 0.12);
+  box-shadow: 0 0 0 2px rgba(35, 76, 160, 0.25), 0 1px 3px rgba(33, 37, 41, 0.12);
 }
 
 .krw-card-icon {
@@ -270,7 +270,7 @@ html, body {
   height: 30px;
   flex-shrink: 0;
   border-radius: 8px;
-  background: #eaf5f2;
+  background: #e8f0fd;
   color: var(--teal-dark);
   display: flex;
   align-items: center;
@@ -320,11 +320,11 @@ html, body {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: #eef4f2;
+  background: #eef2f9;
   color: var(--ink-soft);
   white-space: nowrap;
 }
-.krw-badge-status { background: #eaf5f2; color: var(--teal-dark); }
+.krw-badge-status { background: #e8f0fd; color: var(--teal-dark); }
 
 /* Resource detail pane */
 .krw-detail-pane {
@@ -398,7 +398,7 @@ html, body {
   border-radius: 6px;
   flex-shrink: 0;
 }
-.krw-detail-close:hover { background: #f3f9f7; color: var(--ink); }
+.krw-detail-close:hover { background: #eef3fc; color: var(--ink); }
 
 .krw-detail-body {
   flex: 1;

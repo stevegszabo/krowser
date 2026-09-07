@@ -42,8 +42,8 @@ function graphView() {
             selector: 'edge',
             style: {
               width: 1.5,
-              'line-color': '#a9c9c2',
-              'target-arrow-color': '#a9c9c2',
+              'line-color': '#adb5bd',
+              'target-arrow-color': '#adb5bd',
               'target-arrow-shape': 'triangle',
               'arrow-scale': 0.9,
               'curve-style': 'bezier',
