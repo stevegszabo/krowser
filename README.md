@@ -4,11 +4,8 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 
 ## Screenshots
 
-![Deployments view with the YAML detail pane open on a Deployment](krowser-01.png)
-*Deployments view (`base-tco` namespace) — Deployment → ReplicaSet → Pod ownership chain, with the resizable read-only YAML pane open.*
-
-![StatefulSets view showing the full relationship graph for a vault StatefulSet](krowser-02.png)
-*StatefulSets view (`base-vault` namespace) — Services and EndpointSlices routing to the pod, alongside the Secret, ConfigMap, and PersistentVolumeClaim/PersistentVolume it uses.*
+![StatefulSets view showing the full relationship graph for a vault StatefulSet, with the YAML detail pane open on a pod](krowser-01.png)
+*StatefulSets view (`base-vault` namespace) — Services and EndpointSlices routing to the `vault-0` pod, alongside the ConfigMap, Secret, and PersistentVolumeClaim/PersistentVolume it uses, with the resizable read-only YAML pane open.*
 
 ## Features
 
