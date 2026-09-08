@@ -117,6 +117,48 @@ def test_deployment_graph_includes_used_service_configmap_secret_pvc(
     assert ("eps-1", "pod-1", "targets") in relations
 
 
+def test_shared_configmap_does_not_bridge_unrelated_pod_into_view(
+    monkeypatch, make_deployment, make_replica_set, make_pod, make_config_map
+):
+    # Reproduces a real ArgoCD namespace: a Deployment's pod and a
+    # StatefulSet's pod both mount the same ConfigMap (e.g.
+    # argocd-cmd-params-cm). The StatefulSet itself isn't fetched for the
+    # Deployments view, so its pod has no "owns" edge into this graph at
+    # all -- the shared ConfigMap must not become a backdoor connection.
+    deploy = make_deployment("dep-1", "web")
+    rs = make_replica_set(
+        "rs-1", "web-abc",
+        owner_refs=[k8s.V1OwnerReference(kind="Deployment", name="web", uid="dep-1", api_version="apps/v1")],
+    )
+    deploy_pod = make_pod(
+        "pod-1", "web-abc-xyz",
+        owner_refs=[k8s.V1OwnerReference(kind="ReplicaSet", name="web-abc", uid="rs-1", api_version="apps/v1")],
+        volumes=[k8s.V1Volume(name="cfg", config_map=k8s.V1ConfigMapVolumeSource(name="shared-cm"))],
+    )
+    unrelated_pod = make_pod(
+        "pod-2", "other-0",
+        owner_refs=[k8s.V1OwnerReference(kind="StatefulSet", name="other", uid="sts-1", api_version="apps/v1")],
+        volumes=[k8s.V1Volume(name="cfg", config_map=k8s.V1ConfigMapVolumeSource(name="shared-cm"))],
+    )
+    shared_cm = make_config_map("cm-1", "shared-cm")
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Deployment": [deploy],
+            "ReplicaSet": [rs],
+            "Pod": [deploy_pod, unrelated_pod],
+            "ConfigMap": [shared_cm],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/deployments", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"dep-1", "rs-1", "pod-1", "cm-1"}
+    assert "pod-2" not in node_ids
+
+
 def test_configmaps_have_no_edges(monkeypatch):
     cm = k8s.V1ConfigMap(
         metadata=k8s.V1ObjectMeta(uid="cm-1", name="cfg", namespace="ns"),

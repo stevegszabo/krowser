@@ -8,6 +8,12 @@ const RELATION_LABEL = {
   targets: 'targets',
 };
 
+// Views with no relationship edges whose resource count can run into the
+// hundreds and whose names are frequently long -- a square grid truncates
+// most of them, so these render as a single wide column instead. See the
+// matching wide-card selector below and the .krw-card--wide CSS rule.
+const SINGLE_COLUMN_LIST_TYPES = ['cluster/crds'];
+
 function sameIdSet(elements, ids) {
   if (elements.length !== ids.size) return false;
   for (let i = 0; i < elements.length; i++) {
@@ -32,11 +38,19 @@ function graphView() {
             selector: 'node',
             style: {
               width: 224,
-              height: 66,
+              height: 80,
               shape: 'roundrectangle',
               'background-opacity': 0,
               'border-width': 0,
             },
+          },
+          {
+            // These render as a wide single-column list (see runLayout) so
+            // full names are visible; the card's CSS width does the actual
+            // visual sizing, but the layout engine's spacing/collision math
+            // uses this node width, so it must match .krw-card--wide.
+            selector: 'node[kind = "CustomResourceDefinition"]',
+            style: { width: 640 },
           },
           {
             selector: 'edge',
@@ -188,13 +202,20 @@ function graphView() {
     },
 
     runLayout(preservedView) {
-      // Unconnected graphs (e.g. ConfigMaps/Secrets, which have no edges) fall
+      // Unconnected graphs (e.g. PersistentVolumes, which have no edges) fall
       // into a single dagre rank and get laid out as one very tall column,
       // forcing a tiny fit-to-screen zoom. A grid reads far better for those.
+      // SINGLE_COLUMN_LIST_TYPES are the exception: names are long and there
+      // can be dozens/hundreds of them, so a square grid truncates most of
+      // them -- a single wide column (see the wide-card node style above)
+      // reads better.
       const hasEdges = this.cy.edges().length > 0;
+      const isSingleColumnList = SINGLE_COLUMN_LIST_TYPES.includes(this.$store.app.selectedType);
       const layout = hasEdges
         ? { name: 'dagre', rankDir: 'LR', nodeSep: 24, rankSep: 90, animate: false }
-        : { name: 'grid', condense: true, avoidOverlapPadding: 24, animate: false };
+        : isSingleColumnList
+          ? { name: 'grid', cols: 1, condense: true, avoidOverlapPadding: 16, animate: false }
+          : { name: 'grid', condense: true, avoidOverlapPadding: 24, animate: false };
       this.cy.layout(layout).run();
       if (preservedView) {
         // Order matters: cytoscape's zoom(level) setter can itself shift pan

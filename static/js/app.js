@@ -22,6 +22,17 @@ document.addEventListener('alpine:init', () => {
     error: null,
     lastUpdated: null,
     pollMs: 10000,
+
+    // Namespace filtering only shrinks the result set for namespaced types
+    // and the one cluster-scoped exception (PersistentVolume, which
+    // fetch_root filters to PVs bound within the chosen namespace). For
+    // other cluster-scoped types (Nodes, CRDs) picking a namespace is a
+    // no-op, so the truncation banner shouldn't suggest it as a fix.
+    get namespaceFilterHelps() {
+      if (this.namespace) return false;
+      const rt = this.resourceTypes.find((t) => t.id === this.selectedType);
+      return !!rt && (rt.namespaced || rt.id === 'storage/persistentvolumes');
+    },
   });
 
   Alpine.data('appRoot', () => ({
