@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 Health = Literal["healthy", "progressing", "degraded", "suspended", "unknown"]
 BadgeVariant = Literal["age", "status", "ready", "namespace", "misc"]
-Relation = Literal["owns", "routes-to", "claims", "binds", "uses", "exposes", "targets"]
+Relation = Literal["owns", "routes-to", "claims", "binds", "uses", "exposes", "targets", "runs-on"]
 
 
 class Badge(BaseModel):
@@ -25,6 +25,7 @@ class GraphNode(BaseModel):
     ready: str | None
     badges: list[Badge]
     is_root: bool
+    is_static: bool = False
 
 
 class GraphEdge(BaseModel):

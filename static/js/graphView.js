@@ -6,6 +6,7 @@ const RELATION_LABEL = {
   uses: 'uses',
   exposes: 'exposes',
   targets: 'targets',
+  'runs-on': 'runs on',
 };
 
 // Views with no relationship edges whose resource count can run into the
@@ -211,8 +212,13 @@ function graphView() {
       // reads better.
       const hasEdges = this.cy.edges().length > 0;
       const isSingleColumnList = SINGLE_COLUMN_LIST_TYPES.includes(this.$store.app.selectedType);
+      // Nodes fan out to potentially dozens of pods each; with the default
+      // left-to-right rank direction those pods (all one rank) stack into a
+      // single tall vertical column. Ranking top-to-bottom instead spreads
+      // them horizontally, which reads much better for a wide, shallow fan-out.
+      const isNodesView = this.$store.app.selectedType === 'cluster/nodes';
       const layout = hasEdges
-        ? { name: 'dagre', rankDir: 'LR', nodeSep: 24, rankSep: 90, animate: false }
+        ? { name: 'dagre', rankDir: isNodesView ? 'TB' : 'LR', nodeSep: 24, rankSep: 90, animate: false }
         : isSingleColumnList
           ? { name: 'grid', cols: 1, condense: true, avoidOverlapPadding: 16, animate: false }
           : { name: 'grid', condense: true, avoidOverlapPadding: 24, animate: false };

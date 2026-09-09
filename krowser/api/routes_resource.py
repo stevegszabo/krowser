@@ -29,4 +29,4 @@ def get_resource_yaml(
     except Exception as exc:
         raise to_http_exception(exc) from exc
 
-    return {"yaml": yaml_text}
+    return {"yaml": yaml_text, "data": sanitized}

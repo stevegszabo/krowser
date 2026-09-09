@@ -6,6 +6,7 @@ from krowser.graph.relationships import (
     link_ingress_to_services,
     link_owner_references,
     link_pod_to_configmap,
+    link_pod_to_node,
     link_pod_to_pvc,
     link_pod_to_secret,
     link_pvc_to_pv,
@@ -97,6 +98,48 @@ def test_pvc_binds_to_pv_only_when_bound(make_pvc, make_pv):
     edges = link_pvc_to_pv(world)
 
     assert [(e.source, e.target) for e in edges] == [("pvc-1", "pv-1")]
+
+
+def test_pod_runs_on_matching_node(make_pod, make_node):
+    node = make_node("node-1", "worker-1")
+    pod = make_pod("pod-1", "web", node_name="worker-1")
+
+    world = {"Pod": [pod], "Node": [node]}
+    edges = link_pod_to_node(world)
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("pod-1", "node-1", "runs-on")]
+
+
+def test_pod_not_linked_to_node_missing_from_world(make_pod):
+    pod = make_pod("pod-1", "web", node_name="worker-1")
+
+    edges = link_pod_to_node({"Pod": [pod]})
+
+    assert edges == []
+
+
+def test_unscheduled_pod_has_no_node_edge(make_pod, make_node):
+    node = make_node("node-1", "worker-1")
+    pod = make_pod("pod-1", "web")  # node_name defaults to None
+
+    edges = link_pod_to_node({"Pod": [pod], "Node": [node]})
+
+    assert edges == []
+
+
+def test_static_pod_owned_by_node_has_no_duplicate_runs_on_edge(make_pod, make_node):
+    # Static/mirror pods (e.g. kube-apiserver) carry a real ownerReference
+    # back to their Node; link_owner_references already covers that as an
+    # "owns" edge, so link_pod_to_node must not also emit "runs-on".
+    node = make_node("node-1", "worker-1")
+    static_pod = make_pod(
+        "pod-1", "kube-apiserver-worker-1", node_name="worker-1",
+        owner_refs=[k8s.V1OwnerReference(kind="Node", name="worker-1", uid="node-1", api_version="v1")],
+    )
+
+    edges = link_pod_to_node({"Pod": [static_pod], "Node": [node]})
+
+    assert edges == []
 
 
 def test_build_edges_chains_cronjob_job_pod(make_cron_job, make_job, make_pod):
@@ -315,4 +358,21 @@ def test_build_edges_chains_service_endpointslice_pod(make_service, make_endpoin
     assert {(e.source, e.target, e.relation) for e in edges} == {
         ("svc-1", "eps-1", "exposes"),
         ("eps-1", "pod-1", "targets"),
+    }
+
+
+def test_build_edges_static_pod_has_single_owns_edge_to_node(make_pod, make_node):
+    node = make_node("node-1", "worker-1")
+    static_pod = make_pod(
+        "pod-1", "kube-apiserver-worker-1", namespace="kube-system", node_name="worker-1",
+        owner_refs=[k8s.V1OwnerReference(kind="Node", name="worker-1", uid="node-1", api_version="v1")],
+    )
+    regular_pod = make_pod("pod-2", "web", node_name="worker-1")
+
+    world = {"Node": [node], "Pod": [static_pod, regular_pod]}
+    edges = build_edges(world)
+
+    assert {(e.source, e.target, e.relation) for e in edges} == {
+        ("node-1", "pod-1", "owns"),
+        ("pod-2", "node-1", "runs-on"),
     }

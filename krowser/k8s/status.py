@@ -317,6 +317,12 @@ def build_node(obj: Any, kind: str, icon: str, is_root: bool) -> GraphNode:
 
     health, status_label, ready, extra_badges = describer(obj)
     age_badge, age, age_seconds = _age_badge(obj)
+    # Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry a
+    # real ownerReference back to their Node -- flag them so the frontend can
+    # style them distinctly instead of drawing a second, redundant edge.
+    is_static = kind == "Pod" and any(
+        ref.kind == "Node" for ref in (obj.metadata.owner_references or [])
+    )
 
     return GraphNode(
         id=obj.metadata.uid,
@@ -331,4 +337,5 @@ def build_node(obj: Any, kind: str, icon: str, is_root: bool) -> GraphNode:
         ready=ready,
         badges=[age_badge, *extra_badges],
         is_root=is_root,
+        is_static=is_static,
     )

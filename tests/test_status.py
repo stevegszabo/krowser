@@ -73,3 +73,14 @@ def test_crd_condition_health_mapping(make_crd):
 
     assert (established.health, pending.health, unknown.health) == ("healthy", "progressing", "unknown")
     assert established.status_label == "Established"
+
+
+def test_static_pod_flagged_is_static(make_pod):
+    static_pod = make_pod(
+        "pod-1", "kube-apiserver-worker-1",
+        owner_refs=[k8s.V1OwnerReference(kind="Node", name="worker-1", uid="node-1", api_version="v1")],
+    )
+    regular_pod = make_pod("pod-2", "web")
+
+    assert build_node(static_pod, "Pod", "pod", True).is_static is True
+    assert build_node(regular_pod, "Pod", "pod", True).is_static is False

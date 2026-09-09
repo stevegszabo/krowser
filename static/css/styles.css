@@ -278,6 +278,10 @@ html, body {
   box-shadow: 0 0 0 2px rgba(35, 76, 160, 0.25), 0 1px 3px rgba(33, 37, 41, 0.12);
 }
 
+.krw-card.is-static {
+  background: #eafaf0;
+}
+
 .krw-card-icon {
   width: 30px;
   height: 30px;
@@ -438,13 +442,93 @@ html, body {
   color: #8a2f22;
 }
 
-.krw-yaml {
-  margin: 0;
+.krw-yaml-tree {
   padding: 14px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
   color: var(--ink);
-  white-space: pre;
-  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+.krw-tree-root,
+.krw-tree-children {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.krw-tree-children {
+  padding-left: 16px;
+}
+
+.krw-tree-node.collapsed > .krw-tree-children {
+  display: none;
+}
+
+.krw-tree-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 4px;
+}
+
+/* Zebra-stripe rows within each nesting level. nth-child is DOM-position
+   based, so this stays correct regardless of which siblings are collapsed. */
+.krw-tree-node:nth-child(even) > .krw-tree-row {
+  background: #f4f7fc;
+}
+
+.krw-tree-row[data-toggle] {
+  cursor: pointer;
+}
+.krw-tree-row[data-toggle]:hover .krw-tree-key {
+  color: var(--teal-dark);
+}
+
+.krw-tree-caret,
+.krw-tree-caret-spacer {
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.krw-tree-caret {
+  color: var(--ink-soft);
+}
+.krw-tree-caret::before {
+  content: "\25B8";
+  display: inline-block;
+  transition: transform 0.1s;
+}
+.krw-tree-node:not(.collapsed) > .krw-tree-row .krw-tree-caret::before {
+  transform: rotate(90deg);
+}
+
+.krw-tree-key {
+  color: var(--ink);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.krw-tree-key--index {
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+
+.krw-tree-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.krw-tree-value--string { color: var(--ink); }
+.krw-tree-value--number,
+.krw-tree-value--bool { color: var(--teal-dark); }
+.krw-tree-value--null,
+.krw-tree-value--empty { color: var(--ink-soft); font-style: italic; }
+
+.krw-tree-value--multiline {
+  display: block;
+  margin-top: 2px;
 }

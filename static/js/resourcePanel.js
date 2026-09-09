@@ -4,6 +4,7 @@ const DETAIL_PANE_MAX_WIDTH = 900;
 function resourcePanel() {
   return {
     yamlText: '',
+    treeHtml: '',
     loading: false,
     error: null,
     requestSeq: 0,
@@ -53,6 +54,7 @@ function resourcePanel() {
 
       if (!selected) {
         this.yamlText = '';
+        this.treeHtml = '';
         this.error = null;
         return;
       }
@@ -68,13 +70,24 @@ function resourcePanel() {
         });
         if (requestId !== this.requestSeq) return;
         this.yamlText = res.yaml;
+        // Rendered once per load (not a live getter) so a new selection
+        // always starts fully expanded, independent of any .collapsed
+        // classes left on the previous resource's tree DOM.
+        this.treeHtml = renderYamlTree(res.data);
       } catch (e) {
         if (requestId !== this.requestSeq) return;
         this.error = e.message;
         this.yamlText = '';
+        this.treeHtml = '';
       } finally {
         if (requestId === this.requestSeq) this.loading = false;
       }
+    },
+
+    handleTreeClick(event) {
+      const row = event.target.closest('.krw-tree-row[data-toggle]');
+      if (!row) return;
+      row.closest('.krw-tree-node').classList.toggle('collapsed');
     },
 
     close() {

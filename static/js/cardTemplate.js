@@ -29,7 +29,7 @@ function renderCard(node) {
     : '';
 
   return `
-    <div class="krw-card ${node.is_root ? 'is-root' : ''} ${node.is_selected ? 'is-selected' : ''} ${WIDE_CARD_KINDS.includes(node.kind) ? 'krw-card--wide' : ''}">
+    <div class="krw-card ${node.is_root ? 'is-root' : ''} ${node.is_selected ? 'is-selected' : ''} ${node.is_static ? 'is-static' : ''} ${WIDE_CARD_KINDS.includes(node.kind) ? 'krw-card--wide' : ''}">
       <div class="krw-card-icon">${icon}</div>
       <div class="krw-card-body">
         <div class="krw-card-title" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</div>

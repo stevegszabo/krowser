@@ -71,6 +71,23 @@ def test_resource_yaml_returns_yaml_text(client, monkeypatch, make_pod):
     assert "namespace: ns" in yaml_text
 
 
+def test_resource_yaml_returns_structured_data(client, monkeypatch, make_pod):
+    pod = make_pod("pod-1", "web-abc", namespace="ns")
+    pod.kind = "Pod"
+    pod.api_version = "v1"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+
+    res = client.get("/api/resource-yaml", params={"kind": "Pod", "name": "web-abc", "namespace": "ns"})
+
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["kind"] == "Pod"
+    assert data["metadata"]["name"] == "web-abc"
+    assert data["metadata"]["namespace"] == "ns"
+
+
 def test_resource_yaml_unknown_kind_is_404(client):
     res = client.get("/api/resource-yaml", params={"kind": "Bogus", "name": "x"})
     assert res.status_code == 404

@@ -221,6 +221,35 @@ def test_nodes_have_no_edges(monkeypatch, make_node):
     assert graph.edges == []
 
 
+def test_node_graph_includes_its_pods(monkeypatch, make_node, make_pod):
+    node_a = make_node("node-1", "worker-1")
+    node_b = make_node("node-2", "worker-2")
+    pod_on_a = make_pod("pod-1", "web-a", node_name="worker-1")
+    pod_on_b = make_pod("pod-2", "web-b", node_name="worker-2")
+    _patch_fetchers(monkeypatch, {"Node": [node_a, node_b], "Pod": [pod_on_a, pod_on_b]})
+
+    graph = GraphBuilder(mgr=None).build("cluster/nodes", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"node-1", "node-2", "pod-1", "pod-2"}
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert relations == {("pod-1", "node-1", "runs-on"), ("pod-2", "node-2", "runs-on")}
+
+
+def test_node_graph_shows_single_edge_for_static_pod(monkeypatch, make_node, make_pod):
+    node = make_node("node-1", "worker-1")
+    static_pod = make_pod(
+        "pod-1", "kube-apiserver-worker-1", namespace="kube-system", node_name="worker-1",
+        owner_refs=[k8s.V1OwnerReference(kind="Node", name="worker-1", uid="node-1", api_version="v1")],
+    )
+    _patch_fetchers(monkeypatch, {"Node": [node], "Pod": [static_pod]})
+
+    graph = GraphBuilder(mgr=None).build("cluster/nodes", namespace="ns", context=None)
+
+    assert {(e.source, e.target, e.relation) for e in graph.edges} == {("node-1", "pod-1", "owns")}
+    static_node = next(n for n in graph.nodes if n.id == "pod-1")
+    assert static_node.is_static is True
+
+
 def test_crds_have_no_edges(monkeypatch, make_crd):
     crd_a = make_crd("crd-1", "widgets.example.com")
     crd_b = make_crd("crd-2", "gadgets.example.com", established="False")

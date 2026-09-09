@@ -198,6 +198,36 @@ def link_pvc_to_pv(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_pod_to_node(world: World) -> list[GraphEdge]:
+    """Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry
+    a real ownerReference back to their Node, which link_owner_references
+    already turns into an "owns" edge -- skip those here to avoid a second,
+    duplicate edge between the same Node and Pod."""
+    nodes_by_name = {n.metadata.name: n for n in world.get("Node", [])}
+    edges = []
+    for pod in world.get("Pod", []):
+        node_name = pod.spec.node_name
+        if not node_name:
+            continue
+        node = nodes_by_name.get(node_name)
+        if not node:
+            continue
+        owned_by_node = any(
+            ref.uid == node.metadata.uid for ref in (pod.metadata.owner_references or [])
+        )
+        if owned_by_node:
+            continue
+        edges.append(
+            GraphEdge(
+                id=f"runs-on:{pod.metadata.uid}:{node.metadata.uid}",
+                source=pod.metadata.uid,
+                target=node.metadata.uid,
+                relation="runs-on",
+            )
+        )
+    return edges
+
+
 SERVICE_NAME_LABEL = "kubernetes.io/service-name"
 
 
@@ -250,6 +280,7 @@ LINKERS = [
     link_ingress_to_services,
     link_pod_to_pvc,
     link_pvc_to_pv,
+    link_pod_to_node,
     link_pod_to_configmap,
     link_pod_to_secret,
     link_service_to_endpointslices,
