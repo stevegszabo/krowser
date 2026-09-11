@@ -323,6 +323,13 @@ def build_node(obj: Any, kind: str, icon: str, is_root: bool) -> GraphNode:
     is_static = kind == "Pod" and any(
         ref.kind == "Node" for ref in (obj.metadata.owner_references or [])
     )
+    # Init containers first (spec order), then regular containers -- used to
+    # build one "Get pod logs" context-menu item per container.
+    containers = []
+    if kind == "Pod":
+        containers = [c.name for c in (obj.spec.init_containers or [])] + [
+            c.name for c in (obj.spec.containers or [])
+        ]
 
     return GraphNode(
         id=obj.metadata.uid,
@@ -338,4 +345,5 @@ def build_node(obj: Any, kind: str, icon: str, is_root: bool) -> GraphNode:
         badges=[age_badge, *extra_badges],
         is_root=is_root,
         is_static=is_static,
+        containers=containers,
     )

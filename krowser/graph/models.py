@@ -26,6 +26,7 @@ class GraphNode(BaseModel):
     badges: list[Badge]
     is_root: bool
     is_static: bool = False
+    containers: list[str] = []
 
 
 class GraphEdge(BaseModel):

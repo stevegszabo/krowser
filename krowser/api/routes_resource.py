@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.k8s.client import KubeClientManager
-from krowser.k8s.getters import GETTERS_BY_KIND
+from krowser.k8s.getters import GETTERS_BY_KIND, get_pod_events, get_pod_logs
+from krowser.k8s.pod_describe import describe_pod
 
 router = APIRouter(prefix="/api", tags=["resource"])
 
@@ -30,3 +31,36 @@ def get_resource_yaml(
         raise to_http_exception(exc) from exc
 
     return {"yaml": yaml_text, "data": sanitized}
+
+
+@router.get("/pod-describe")
+def get_pod_describe(
+    name: str,
+    namespace: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    try:
+        pod = GETTERS_BY_KIND["Pod"](mgr, context, namespace, name)
+        events = get_pod_events(mgr, context, namespace, name)
+        sections = describe_pod(pod, events)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"sections": sections}
+
+
+@router.get("/pod-logs")
+def get_pod_logs_route(
+    name: str,
+    namespace: str,
+    container: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    try:
+        logs = get_pod_logs(mgr, context, namespace, name, container, tail_lines=100)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"logs": logs}

@@ -17,6 +17,33 @@ def get_pod(mgr: KubeClientManager, context: str | None, namespace: str, name: s
     return _get("Pod", mgr.core_v1(context).read_namespaced_pod, name, namespace)
 
 
+def get_pod_events(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> list[Any]:
+    # Matches kubectl's own approach: filter by involvedObject.name/namespace,
+    # not uid, so this can't distinguish a deleted-and-recreated same-named
+    # pod's events from the current one -- kubectl describe has this same
+    # limitation.
+    events = _get(
+        "Event",
+        mgr.core_v1(context).list_namespaced_event,
+        namespace,
+        field_selector=f"involvedObject.name={name}",
+    )
+    return events.items
+
+
+def get_pod_logs(
+    mgr: KubeClientManager, context: str | None, namespace: str, name: str, container: str, tail_lines: int = 100
+) -> str:
+    return _get(
+        "Pod",
+        mgr.core_v1(context).read_namespaced_pod_log,
+        name,
+        namespace,
+        container=container,
+        tail_lines=tail_lines,
+    )
+
+
 def get_service(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
     return _get("Service", mgr.core_v1(context).read_namespaced_service, name, namespace)
 

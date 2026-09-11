@@ -84,3 +84,15 @@ def test_static_pod_flagged_is_static(make_pod):
 
     assert build_node(static_pod, "Pod", "pod", True).is_static is True
     assert build_node(regular_pod, "Pod", "pod", True).is_static is False
+
+
+def test_pod_node_lists_containers_init_first(make_pod, make_deployment):
+    pod = make_pod(
+        "pod-1", "web",
+        containers=[k8s.V1Container(name="app", image="nginx"), k8s.V1Container(name="sidecar", image="envoy")],
+        init_containers=[k8s.V1Container(name="init-setup", image="busybox")],
+    )
+    assert build_node(pod, "Pod", "pod", True).containers == ["init-setup", "app", "sidecar"]
+
+    deploy = make_deployment("dep-1", "web")
+    assert build_node(deploy, "Deployment", "deployment", True).containers == []

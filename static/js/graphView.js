@@ -30,6 +30,8 @@ function graphView() {
     zoomPct: 100,
     legendOpen: false,
     lastSelectionKey: null,
+    contextMenu: { visible: false, x: 0, y: 0, resource: null },
+    hoveredNode: null,
 
     init() {
       this.cy = cytoscape({
@@ -92,22 +94,63 @@ function graphView() {
         store.selectedResource = isSame
           ? null
           : { id: data.id, kind: data.kind, namespace: data.namespace, name: data.name };
+        this.contextMenu.visible = false;
+      });
+
+      // Cytoscape's own 'cxttap' event depends on the browser reporting a
+      // right-button mousedown, which macOS trackpad right-click (Ctrl+click
+      // or a two-finger tap) frequently does not do -- the OS/browser still
+      // fires a native 'contextmenu' event, just without button:2 on the
+      // preceding mousedown, so cxttap silently never fires. Driving the
+      // menu off the native 'contextmenu' event instead is reliable across
+      // platforms/input methods; we use the hover-tracked node (already
+      // needed for the manual cursor styling below) to know which resource
+      // was under the pointer.
+      this.$refs.canvas.addEventListener('contextmenu', (evt) => {
+        evt.preventDefault();
+        if (!this.hoveredNode || this.hoveredNode.removed()) {
+          this.contextMenu.visible = false;
+          return;
+        }
+        const data = this.hoveredNode.data();
+        const containers = data.containers || [];
+        // Clamp so the menu can't render past the right/bottom edge of the
+        // window. Item count varies (one extra "Get pod logs - X" row per
+        // container), so the height estimate accounts for that.
+        const itemCount = 2 + containers.length;
+        const x = Math.min(evt.clientX, window.innerWidth - 240);
+        const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
+        this.contextMenu = {
+          visible: true,
+          x,
+          y,
+          resource: { id: data.id, kind: data.kind, namespace: data.namespace, name: data.name, containers },
+        };
+      });
+
+      // Any pan/zoom or background tap invalidates the menu's position/relevance.
+      this.cy.on('pan zoom', () => {
+        this.contextMenu.visible = false;
       });
 
       // The node-html-label overlay has pointer-events:none (clicks pass through
       // to the canvas, which is what lets the 'tap' handler above work at all),
       // so the browser won't show a hover cursor on its own -- set it manually.
-      this.cy.on('mouseover', 'node', () => {
+      // Also tracked for the contextmenu handler above (see comment there).
+      this.cy.on('mouseover', 'node', (evt) => {
         this.$refs.canvas.style.cursor = 'pointer';
+        this.hoveredNode = evt.target;
       });
       this.cy.on('mouseout', 'node', () => {
         this.$refs.canvas.style.cursor = '';
+        this.hoveredNode = null;
       });
 
       this.cy.on('tap', (evt) => {
         if (evt.target === this.cy) {
           this.$store.app.selectedResource = null;
         }
+        this.contextMenu.visible = false;
       });
 
       // Single source of truth for the selection highlight: applies regardless
@@ -122,15 +165,23 @@ function graphView() {
           const node = this.cy.getElementById(selected.id);
           if (node.nonempty()) node.data('is_selected', true);
         }
-        // The detail pane's open/closed state changes the graph container's
-        // width; cytoscape needs to be told explicitly once the browser has
-        // applied that layout change.
+      });
+
+      // The detail pane's open/closed state changes the graph container's
+      // width; cytoscape needs to be told explicitly once the browser has
+      // applied that layout change.
+      this.$watch('$store.app.detailResource', () => {
         requestAnimationFrame(() => this.cy.resize());
       });
 
       // Also keep the canvas in sync while the user drags the detail pane's
       // resize handle (fires continuously during drag; cy.resize() is cheap).
       this.$watch('$store.app.detailPaneWidth', () => {
+        requestAnimationFrame(() => this.cy.resize());
+      });
+
+      // Hiding/showing the left nav also changes the canvas's available width.
+      this.$watch('$store.app.leftPaneVisible', () => {
         requestAnimationFrame(() => this.cy.resize());
       });
 
@@ -254,6 +305,28 @@ function graphView() {
       this.panMode = !this.panMode;
       this.cy.userPanningEnabled(this.panMode);
       this.cy.boxSelectionEnabled(!this.panMode);
+    },
+
+    selectFromContextMenu() {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'yaml' };
+      this.contextMenu.visible = false;
+    },
+
+    describeFromContextMenu() {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'describe' };
+      this.contextMenu.visible = false;
+    },
+
+    viewLogsFromContextMenu(container) {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'logs', container };
+      this.contextMenu.visible = false;
+    },
+
+    closeContextMenu() {
+      this.contextMenu.visible = false;
     },
   };
 }

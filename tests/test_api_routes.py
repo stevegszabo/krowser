@@ -102,3 +102,60 @@ def test_resource_yaml_maps_resource_access_error(client, monkeypatch):
     res = client.get("/api/resource-yaml", params={"kind": "Pod", "name": "x", "namespace": "ns"})
 
     assert res.status_code == 403
+
+
+def test_pod_describe_returns_sections(client, monkeypatch, make_pod):
+    pod = make_pod("pod-1", "web-abc", namespace="ns")
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+    monkeypatch.setattr(routes_resource_module, "get_pod_events", lambda mgr, context, namespace, name: [])
+
+    res = client.get("/api/pod-describe", params={"name": "web-abc", "namespace": "ns"})
+
+    assert res.status_code == 200
+    sections = res.json()["sections"]
+    titles = [s["title"] for s in sections]
+    assert titles == ["Details", "Containers", "Conditions", "Volumes", "Events"]
+    details = next(s["text"] for s in sections if s["title"] == "Details")
+    assert "Name:           web-abc" in details
+    assert "Namespace:      ns" in details
+    events = next(s["text"] for s in sections if s["title"] == "Events")
+    assert events == "<none>"
+
+
+def test_pod_describe_maps_resource_access_error(client, monkeypatch):
+    def _raise(mgr, context, namespace, name):
+        raise ResourceAccessError("Pod", 403, "Forbidden")
+
+    monkeypatch.setitem(routes_resource_module.GETTERS_BY_KIND, "Pod", _raise)
+
+    res = client.get("/api/pod-describe", params={"name": "x", "namespace": "ns"})
+
+    assert res.status_code == 403
+
+
+def test_pod_logs_returns_text(client, monkeypatch):
+    monkeypatch.setattr(
+        routes_resource_module,
+        "get_pod_logs",
+        lambda mgr, context, namespace, name, container, tail_lines=100: "line one\nline two\n",
+    )
+
+    res = client.get(
+        "/api/pod-logs", params={"name": "web-abc", "namespace": "ns", "container": "app"}
+    )
+
+    assert res.status_code == 200
+    assert res.json()["logs"] == "line one\nline two\n"
+
+
+def test_pod_logs_maps_resource_access_error(client, monkeypatch):
+    def _raise(mgr, context, namespace, name, container, tail_lines=100):
+        raise ResourceAccessError("Pod", 404, "Not Found")
+
+    monkeypatch.setattr(routes_resource_module, "get_pod_logs", _raise)
+
+    res = client.get("/api/pod-logs", params={"name": "x", "namespace": "ns", "container": "app"})
+
+    assert res.status_code == 404

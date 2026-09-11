@@ -28,4 +28,6 @@ const api = {
   getResources: (params) => apiGet('/api/resources', params),
   getGraph: (params) => apiGet('/api/graph', params),
   getResourceYaml: (params) => apiGet('/api/resource-yaml', params),
+  getPodDescribe: (params) => apiGet('/api/pod-describe', params),
+  getPodLogs: (params) => apiGet('/api/pod-logs', params),
 };

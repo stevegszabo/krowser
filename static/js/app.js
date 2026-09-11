@@ -7,6 +7,15 @@ function loadStoredDetailPaneWidth() {
   }
 }
 
+function loadStoredLeftPaneVisible() {
+  try {
+    const stored = localStorage.getItem('krowser.leftPaneVisible');
+    return stored === null ? true : stored === 'true';
+  } catch (_) {
+    return true;
+  }
+}
+
 document.addEventListener('alpine:init', () => {
   Alpine.store('app', {
     contexts: [],
@@ -16,8 +25,10 @@ document.addEventListener('alpine:init', () => {
     resourceTypes: [],
     selectedType: null,
     graph: null,
-    selectedResource: null, // { kind, namespace, name } | null
+    selectedResource: null, // { id, kind, namespace, name } | null -- the highlighted tile, set by a plain click
+    detailResource: null, // { id, kind, namespace, name, view } | null -- drives the detail pane; set only via the context menu
     detailPaneWidth: loadStoredDetailPaneWidth(),
+    leftPaneVisible: loadStoredLeftPaneVisible(),
     loading: false,
     error: null,
     lastUpdated: null,
@@ -67,6 +78,7 @@ document.addEventListener('alpine:init', () => {
     onTypeSelect(id) {
       this.$store.app.selectedType = id;
       this.$store.app.selectedResource = null;
+      this.$store.app.detailResource = null;
       this.restartPolling();
       this.refresh();
     },
@@ -75,6 +87,7 @@ document.addEventListener('alpine:init', () => {
       const store = this.$store.app;
       store.namespace = '';
       store.selectedResource = null;
+      store.detailResource = null;
       try {
         await this.loadNamespaces();
       } catch (e) {
@@ -86,8 +99,19 @@ document.addEventListener('alpine:init', () => {
 
     onNamespaceChange() {
       this.$store.app.selectedResource = null;
+      this.$store.app.detailResource = null;
       this.restartPolling();
       this.refresh();
+    },
+
+    toggleLeftPane() {
+      const store = this.$store.app;
+      store.leftPaneVisible = !store.leftPaneVisible;
+      try {
+        localStorage.setItem('krowser.leftPaneVisible', String(store.leftPaneVisible));
+      } catch (_) {
+        // localStorage unavailable (private browsing, etc.) -- preference just won't persist.
+      }
     },
 
     restartPolling() {

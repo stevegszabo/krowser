@@ -30,6 +30,7 @@ def make_pod():
         phase="Running",
         volumes=None,
         containers=None,
+        init_containers=None,
         image_pull_secrets=None,
         node_name=None,
     ):
@@ -37,6 +38,7 @@ def make_pod():
             metadata=_meta(uid, name, namespace, owner_refs, labels),
             spec=k8s.V1PodSpec(
                 containers=containers or [k8s.V1Container(name="app", image="nginx")],
+                init_containers=init_containers,
                 volumes=volumes or [],
                 image_pull_secrets=image_pull_secrets,
                 node_name=node_name,
