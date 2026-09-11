@@ -1,6 +1,6 @@
 # krowser
 
-A web app for browsing the resources in a Kubernetes cluster and how they relate to each other — pick a resource type, filter by namespace, and see an ArgoCD-style graph of ownership, networking, and storage relationships. Click any node to inspect its full YAML, read-only.
+A web app for browsing the resources in a Kubernetes cluster and how they relate to each other — pick a resource type, filter by namespace, and see an ArgoCD-style graph of ownership, networking, and storage relationships. Click a node to select it; right-click for actions — view its full YAML, and for Pods, get a description or view container logs — all read-only.
 
 ## Screenshots
 
@@ -12,7 +12,10 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 - Browse 13 resource types grouped into **Cluster** (Nodes), **Config** (ConfigMaps, Secrets), **Network** (Ingresses, Services), **Storage** (PersistentVolumes, PersistentVolumeClaims), and **Workloads** (DaemonSets, Deployments, StatefulSets, CronJobs, Jobs, Pods)
 - Filter by namespace (or view all namespaces at once) and by kubeconfig context
 - Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), and Service→EndpointSlice→Pod (shown on Ingresses and Workloads views; the Services view itself lists just Services, with no expansion)
-- Click any node to open a resizable, read-only YAML pane for that resource, fetched fresh from the cluster
+- Right-click any node for a context menu of actions, opening a resizable, read-only detail pane:
+  - **Get \<kind\>** — the resource's full YAML, fetched fresh from the cluster
+  - **Get pod description** (Pods only) — a `kubectl describe`-style summary (containers, conditions, volumes, and recent Events), built entirely via the Kubernetes API
+  - **Get pod logs - \<container\>** (Pods only, one per container) — the last 100 log lines for that container
 - Auto-refreshes on a polling interval without resetting your pan/zoom or losing your current selection unless the underlying resource set actually changes
 - Read-only — no create/edit/delete/scale actions
 
