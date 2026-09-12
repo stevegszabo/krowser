@@ -78,7 +78,9 @@ def get_node(mgr: KubeClientManager, context: str | None, name: str) -> Any:
 
 
 def get_crd(mgr: KubeClientManager, context: str | None, name: str) -> Any:
-    # Cluster-scoped: no namespace variant exists.
+    # Cluster-scoped: no namespace variant exists. Used directly by
+    # krowser.k8s.resource_types to resolve one dynamic "Custom Resources"
+    # type id back to its CRD -- no GETTERS_BY_KIND entry (see list_crds).
     return _get("CustomResourceDefinition", mgr.apiextensions_v1(context).read_custom_resource_definition, name)
 
 
@@ -127,7 +129,6 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "PersistentVolumeClaim": get_persistent_volume_claim,
     "PersistentVolume": lambda mgr, context, namespace, name: get_persistent_volume(mgr, context, name),
     "Node": lambda mgr, context, namespace, name: get_node(mgr, context, name),
-    "CustomResourceDefinition": lambda mgr, context, namespace, name: get_crd(mgr, context, name),
     "Deployment": get_deployment,
     "StatefulSet": get_stateful_set,
     "DaemonSet": get_daemon_set,

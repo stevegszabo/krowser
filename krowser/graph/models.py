@@ -27,6 +27,12 @@ class GraphNode(BaseModel):
     is_root: bool
     is_static: bool = False
     containers: list[str] = []
+    # Set only for a custom resource instance -- lets the frontend request
+    # its raw YAML via the generic CustomObjectsApi path (it has no
+    # GETTERS_BY_KIND entry, since its Kind is arbitrary/dynamic).
+    api_group: str | None = None
+    api_version: str | None = None
+    plural: str | None = None
 
 
 class GraphEdge(BaseModel):

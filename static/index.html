@@ -48,22 +48,29 @@
 
     <div class="krw-main">
       <template x-if="$store.app.leftPaneVisible">
-        <nav class="krw-left-pane" x-data="resourceList()">
-          <template x-for="group in groupedTypes" :key="group.group || group.items[0].id">
-            <div>
-              <div class="krw-group-header" x-show="group.group" x-text="group.group"></div>
-              <template x-for="rt in group.items" :key="rt.id">
-                <div
-                  class="krw-type-row"
-                  :class="{ selected: $store.app.selectedType === rt.id }"
-                  @click="select(rt.id)"
-                >
-                  <span x-html="window.ICONS[rt.icon] || window.ICONS.default"></span>
-                  <span x-text="rt.label"></span>
-                </div>
-              </template>
-            </div>
-          </template>
+        <nav class="krw-left-pane" x-data="resourceList()" :style="{ width: $store.app.leftPaneWidth + 'px' }">
+          <div
+            class="krw-left-resize-handle"
+            :class="{ resizing: resizing }"
+            @mousedown="startResize($event)"
+          ></div>
+          <div class="krw-left-pane-scroll">
+            <template x-for="group in groupedTypes" :key="group.group || group.items[0].id">
+              <div>
+                <div class="krw-group-header" x-show="group.group" x-text="group.group"></div>
+                <template x-for="rt in group.items" :key="rt.id">
+                  <div
+                    class="krw-type-row"
+                    :class="{ selected: $store.app.selectedType === rt.id }"
+                    @click="select(rt.id)"
+                  >
+                    <span x-html="window.ICONS[rt.icon] || window.ICONS.default"></span>
+                    <span x-text="rt.label"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
         </nav>
       </template>
 

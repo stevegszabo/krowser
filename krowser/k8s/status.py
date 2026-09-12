@@ -262,32 +262,12 @@ def _describe_node(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     return health, status_label, None, badges
 
 
-def _describe_crd(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
-    conditions = obj.status.conditions or []
-    terminating = next((c for c in conditions if c.type == "Terminating"), None)
-    established = next((c for c in conditions if c.type == "Established"), None)
-
-    if terminating is not None and terminating.status == "True":
-        health: Health = "suspended"
-        status_label = "Terminating"
-    elif established is None or established.status == "Unknown":
-        health = "unknown"
-        status_label = "Unknown"
-    elif established.status == "True":
-        health = "healthy"
-        status_label = "Established"
-    else:
-        health = "progressing"
-        status_label = "Pending"
-
-    badges = [Badge(text=status_label, variant="status")]
-    if obj.spec.scope:
-        badges.append(Badge(text=obj.spec.scope, variant="misc"))
-    versions = obj.spec.versions or []
-    if versions:
-        version_names = ",".join(v.name for v in versions[:3])
-        badges.append(Badge(text=version_names, variant="misc"))
-    return health, status_label, None, badges
+def _describe_custom_resource(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # Custom resource schemas are arbitrary and unknown to krowser -- unlike
+    # every other describer here, there's no well-known status shape to read,
+    # so this deliberately reports the same "unknown" health as ConfigMap/
+    # Secret rather than guessing at conventions that don't universally hold.
+    return "unknown", "Unknown", None, []
 
 
 _DESCRIBERS = {
@@ -306,14 +286,24 @@ _DESCRIBERS = {
     "Secret": _describe_secret,
     "EndpointSlice": _describe_endpoint_slice,
     "Node": _describe_node,
-    "CustomResourceDefinition": _describe_crd,
 }
 
 
-def build_node(obj: Any, kind: str, icon: str, is_root: bool) -> GraphNode:
-    describer = _DESCRIBERS.get(kind)
-    if describer is None:
-        raise ValueError(f"no status describer registered for kind {kind!r}")
+def build_node(
+    obj: Any,
+    kind: str,
+    icon: str,
+    is_root: bool,
+    *,
+    api_group: str | None = None,
+    api_version: str | None = None,
+    plural: str | None = None,
+) -> GraphNode:
+    # Any kind not in _DESCRIBERS is a custom resource instance (an
+    # arbitrary Kind from a CRD, discovered dynamically -- see
+    # krowser.k8s.resource_types.get_all_resource_types), never a bug: every
+    # built-in Kind krowser fetches has a registered describer.
+    describer = _DESCRIBERS.get(kind, _describe_custom_resource)
 
     health, status_label, ready, extra_badges = describer(obj)
     age_badge, age, age_seconds = _age_badge(obj)
@@ -346,4 +336,7 @@ def build_node(obj: Any, kind: str, icon: str, is_root: bool) -> GraphNode:
         is_root=is_root,
         is_static=is_static,
         containers=containers,
+        api_group=api_group,
+        api_version=api_version,
+        plural=plural,
     )

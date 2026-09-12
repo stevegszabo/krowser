@@ -14,7 +14,6 @@ WORKLOAD_RELATED_KINDS = (
 
 # Keyed by left-pane resource-type id (krowser.k8s.resource_types.RESOURCE_TYPES).
 GRAPH_EXPANSIONS: dict[str, GraphExpansion] = {
-    "cluster/crds": GraphExpansion(()),
     "cluster/nodes": GraphExpansion(("Pod",)),
     "configmaps": GraphExpansion(()),
     "network/ingresses": GraphExpansion(("Service", "Pod", "EndpointSlice")),
@@ -28,4 +27,6 @@ GRAPH_EXPANSIONS: dict[str, GraphExpansion] = {
     "workloads/cronjobs": GraphExpansion(("Job", "Pod") + WORKLOAD_RELATED_KINDS),
     "workloads/jobs": GraphExpansion(("Pod",) + WORKLOAD_RELATED_KINDS),
     "workloads/pods": GraphExpansion(WORKLOAD_RELATED_KINDS),
+    # Dynamic customresources/<crd-name> ids have no static entry here --
+    # GraphBuilder.build() falls back to an empty GraphExpansion for those.
 }

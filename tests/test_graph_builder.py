@@ -1,7 +1,11 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 from kubernetes import client as k8s
 
 import krowser.graph.builder as builder_module
 from krowser.graph.builder import GraphBuilder
+from krowser.k8s.resource_types import ResourceTypeSpec
 
 
 # Every Kind the builder might look up across any resource-type view. Tests only
@@ -10,7 +14,7 @@ from krowser.graph.builder import GraphBuilder
 ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
-    "EndpointSlice", "Node", "CustomResourceDefinition",
+    "EndpointSlice", "Node",
 ]
 
 
@@ -250,15 +254,50 @@ def test_node_graph_shows_single_edge_for_static_pod(monkeypatch, make_node, mak
     assert static_node.is_static is True
 
 
-def test_crds_have_no_edges(monkeypatch, make_crd):
-    crd_a = make_crd("crd-1", "widgets.example.com")
-    crd_b = make_crd("crd-2", "gadgets.example.com", established="False")
-    _patch_fetchers(monkeypatch, {"CustomResourceDefinition": [crd_a, crd_b]})
+def _make_custom_resource(uid, name, namespace="ns"):
+    return SimpleNamespace(
+        metadata=SimpleNamespace(
+            uid=uid, name=name, namespace=namespace, owner_references=None,
+            creation_timestamp=datetime.now(timezone.utc),
+        )
+    )
 
-    graph = GraphBuilder(mgr=None).build("cluster/crds", namespace="ns", context=None)
 
-    assert {n.id for n in graph.nodes} == {"crd-1", "crd-2"}
+def test_custom_resource_instances_have_no_edges(monkeypatch):
+    # Dynamic custom-resource types have no FETCHERS_BY_KIND/GRAPH_EXPANSIONS
+    # entry (their id/Kind isn't known statically) -- build() instead
+    # resolves the type via get_resource_type() and fetches instances via
+    # list_custom_resources(), both patched here.
+    rt = ResourceTypeSpec(
+        id="customresources/widgets.example.com",
+        label="widgets.example.com",
+        group="Custom Resources",
+        icon="crd",
+        namespaced=True,
+        kind="Widget",
+        api_group="example.com",
+        version="v1",
+        plural="widgets",
+    )
+    monkeypatch.setattr(builder_module, "get_resource_type", lambda type_id, mgr, context: rt)
+
+    widgets = [_make_custom_resource("w-1", "a"), _make_custom_resource("w-2", "b")]
+    monkeypatch.setattr(
+        builder_module,
+        "list_custom_resources",
+        lambda mgr, context, namespace, group, version, plural: widgets,
+    )
+
+    graph = GraphBuilder(mgr=None).build("customresources/widgets.example.com", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"w-1", "w-2"}
     assert graph.edges == []
+    node = next(n for n in graph.nodes if n.id == "w-1")
+    assert node.kind == "Widget"
+    assert node.icon == "crd"
+    assert node.api_group == "example.com"
+    assert node.api_version == "v1"
+    assert node.plural == "widgets"
 
 
 def test_persistent_volumes_filtered_to_namespace_bound_claim(monkeypatch, make_pv):

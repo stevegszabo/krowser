@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
 from kubernetes import client as k8s
 
 from krowser.k8s.status import build_node
@@ -66,13 +69,28 @@ def test_node_condition_health_mapping(make_node):
     assert (ready.status_label, cordoned.status_label) == ("Ready", "Cordoned")
 
 
-def test_crd_condition_health_mapping(make_crd):
-    established = build_node(make_crd("c1", "widgets.example.com", established="True"), "CustomResourceDefinition", "crd", True)
-    pending = build_node(make_crd("c2", "gadgets.example.com", established="False"), "CustomResourceDefinition", "crd", True)
-    unknown = build_node(make_crd("c3", "gizmos.example.com", established="Unknown"), "CustomResourceDefinition", "crd", True)
+def test_custom_resource_kind_falls_back_to_unknown_health_and_carries_api_fields():
+    # A custom resource instance's Kind is arbitrary/dynamic (from a CRD) and
+    # never registered in _DESCRIBERS -- build_node must fall back cleanly
+    # instead of raising, and thread the group/version/plural fields the
+    # frontend needs to later fetch this object's raw YAML.
+    obj = SimpleNamespace(
+        metadata=SimpleNamespace(
+            uid="cr-1",
+            name="my-widget",
+            namespace="ns",
+            creation_timestamp=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+    )
 
-    assert (established.health, pending.health, unknown.health) == ("healthy", "progressing", "unknown")
-    assert established.status_label == "Established"
+    node = build_node(obj, "Widget", "crd", True, api_group="example.com", api_version="v1", plural="widgets")
+
+    assert node.health == "unknown"
+    assert node.status_label == "Unknown"
+    assert len(node.badges) == 1  # just the age badge -- no kind-specific extras
+    assert node.api_group == "example.com"
+    assert node.api_version == "v1"
+    assert node.plural == "widgets"
 
 
 def test_static_pod_flagged_is_static(make_pod):

@@ -16,6 +16,15 @@ function loadStoredLeftPaneVisible() {
   }
 }
 
+function loadStoredLeftPaneWidth() {
+  try {
+    const stored = parseInt(localStorage.getItem('krowser.leftPaneWidth'), 10);
+    return Number.isFinite(stored) ? stored : 260;
+  } catch (_) {
+    return 260;
+  }
+}
+
 document.addEventListener('alpine:init', () => {
   Alpine.store('app', {
     contexts: [],
@@ -29,6 +38,7 @@ document.addEventListener('alpine:init', () => {
     detailResource: null, // { id, kind, namespace, name, view } | null -- drives the detail pane; set only via the context menu
     detailPaneWidth: loadStoredDetailPaneWidth(),
     leftPaneVisible: loadStoredLeftPaneVisible(),
+    leftPaneWidth: loadStoredLeftPaneWidth(),
     loading: false,
     error: null,
     lastUpdated: null,
@@ -37,8 +47,9 @@ document.addEventListener('alpine:init', () => {
     // Namespace filtering only shrinks the result set for namespaced types
     // and the one cluster-scoped exception (PersistentVolume, which
     // fetch_root filters to PVs bound within the chosen namespace). For
-    // other cluster-scoped types (Nodes, CRDs) picking a namespace is a
-    // no-op, so the truncation banner shouldn't suggest it as a fix.
+    // other cluster-scoped types (Nodes, and any cluster-scoped custom
+    // resource) picking a namespace is a no-op, so the truncation banner
+    // shouldn't suggest it as a fix.
     get namespaceFilterHelps() {
       if (this.namespace) return false;
       const rt = this.resourceTypes.find((t) => t.id === this.selectedType);
@@ -53,9 +64,13 @@ document.addEventListener('alpine:init', () => {
     async init() {
       const store = this.$store.app;
       try {
+        // context is null here (contextsRes hasn't resolved yet); the
+        // backend already treats that as "the current context", same as
+        // every other endpoint, so this resolves to the same types list a
+        // second call with the real current-context name would.
         const [contextsRes, typesRes] = await Promise.all([
           api.getContexts(),
-          api.getResourceTypes(),
+          api.getResourceTypes(store.context),
         ]);
         store.contexts = contextsRes.contexts;
         store.context = contextsRes.current;
@@ -90,6 +105,14 @@ document.addEventListener('alpine:init', () => {
       store.detailResource = null;
       try {
         await this.loadNamespaces();
+        // Different clusters/contexts have different CRDs installed, so the
+        // "Custom Resources" group has to be re-fetched on every switch, not
+        // just once at startup.
+        const typesRes = await api.getResourceTypes(store.context);
+        store.resourceTypes = typesRes.resource_types;
+        if (!store.resourceTypes.some((rt) => rt.id === store.selectedType)) {
+          store.selectedType = store.resourceTypes[0]?.id ?? null;
+        }
       } catch (e) {
         store.error = e.message;
       }

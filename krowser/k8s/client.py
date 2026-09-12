@@ -89,6 +89,9 @@ class KubeClientManager:
     def apiextensions_v1(self, context: str | None) -> k8s_client.ApiextensionsV1Api:
         return k8s_client.ApiextensionsV1Api(self.api_client_for(context))
 
+    def custom_objects_api(self, context: str | None) -> k8s_client.CustomObjectsApi:
+        return k8s_client.CustomObjectsApi(self.api_client_for(context))
+
     def list_namespaces(self, context: str | None) -> list[str]:
         namespaces = self.core_v1(context).list_namespace()
         return sorted(ns.metadata.name for ns in namespaces.items)

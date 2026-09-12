@@ -117,11 +117,34 @@ html, body {
 }
 
 .krw-left-pane {
-  width: 260px;
+  position: relative;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border-right: 1px solid var(--line);
+}
+
+.krw-left-pane-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px 0;
+}
+
+.krw-left-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 3;
+}
+.krw-left-resize-handle:hover,
+.krw-left-resize-handle.resizing {
+  background: var(--teal);
+  opacity: 0.35;
 }
 
 .krw-group-header {
@@ -151,6 +174,13 @@ html, body {
   font-weight: 600;
 }
 .krw-type-row svg { width: 16px; height: 16px; flex-shrink: 0; }
+.krw-type-row span:last-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Right pane / graph */
 .krw-right-pane {
@@ -308,10 +338,6 @@ html, body {
   border: 1.5px solid transparent;
 }
 
-.krw-card--wide {
-  width: 620px;
-}
-
 .krw-card.is-root {
   border-color: var(--teal);
 }
@@ -319,10 +345,6 @@ html, body {
 .krw-card.is-selected {
   border-color: var(--teal-dark);
   box-shadow: 0 0 0 2px rgba(35, 76, 160, 0.25), 0 1px 3px rgba(33, 37, 41, 0.12);
-}
-
-.krw-card.is-static {
-  background: #eafaf0;
 }
 
 .krw-card-icon {

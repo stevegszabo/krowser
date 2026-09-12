@@ -97,6 +97,9 @@ function resourcePanel() {
             namespace: selected.namespace,
             name: selected.name,
             context: this.$store.app.context,
+            group: selected.api_group,
+            version: selected.api_version,
+            plural: selected.plural,
           });
           if (requestId !== this.requestSeq) return;
           this.yamlText = res.yaml;

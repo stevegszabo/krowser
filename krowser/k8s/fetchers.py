@@ -77,7 +77,10 @@ def list_nodes(mgr: KubeClientManager, context: str | None) -> list[Any]:
 
 
 def list_crds(mgr: KubeClientManager, context: str | None) -> list[Any]:
-    # Cluster-scoped: no namespace variant exists.
+    # Cluster-scoped: no namespace variant exists. Used directly by
+    # krowser.k8s.resource_types to discover CRDs for the dynamic "Custom
+    # Resources" type list -- CRD *objects* themselves are never rendered as
+    # graph nodes, so this has no FETCHERS_BY_KIND entry.
     api = mgr.apiextensions_v1(context)
     return _call("CustomResourceDefinition", api.list_custom_resource_definition)
 
@@ -178,7 +181,6 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "PersistentVolumeClaim": list_persistent_volume_claims,
     "PersistentVolume": lambda mgr, context, namespace: list_persistent_volumes(mgr, context),
     "Node": lambda mgr, context, namespace: list_nodes(mgr, context),
-    "CustomResourceDefinition": lambda mgr, context, namespace: list_crds(mgr, context),
     "Deployment": list_deployments,
     "StatefulSet": list_stateful_sets,
     "DaemonSet": list_daemon_sets,
