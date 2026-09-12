@@ -11,7 +11,7 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 
 - Browse 13 built-in resource types grouped into **Cluster** (Nodes), **Config** (ConfigMaps, Secrets), **Network** (Ingresses, Services), **Storage** (PersistentVolumes, PersistentVolumeClaims), and **Workloads** (DaemonSets, Deployments, StatefulSets, CronJobs, Jobs, Pods), plus a **Custom Resources** group listing every CRD installed in the cluster — selecting one shows all of its instances
 - Filter by namespace (or view all namespaces at once) and by kubeconfig context
-- Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), and Service→EndpointSlice→Pod (shown on Ingresses and Workloads views; the Services view itself lists just Services, with no expansion)
+- Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), and Service→EndpointSlice→Pod (shown on the Ingresses and Services views)
 - Right-click any node for a context menu of actions, opening a resizable, read-only detail pane:
   - **Get \<kind\>** — the resource's full YAML, fetched fresh from the cluster
   - **Get pod description** (Pods only) — a `kubectl describe`-style summary (containers, conditions, volumes, and recent Events), built entirely via the Kubernetes API

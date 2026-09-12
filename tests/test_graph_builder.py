@@ -52,7 +52,7 @@ def test_deployment_graph_excludes_unrelated_pods(monkeypatch, make_deployment, 
     assert graph.truncated is False
 
 
-def test_deployment_graph_includes_used_service_configmap_secret_pvc(
+def test_deployment_graph_includes_used_configmap_secret_pvc_excludes_service_and_eps(
     monkeypatch,
     make_deployment,
     make_replica_set,
@@ -109,16 +109,21 @@ def test_deployment_graph_includes_used_service_configmap_secret_pvc(
 
     graph = GraphBuilder(mgr=None).build("workloads/deployments", namespace="ns", context=None)
 
+    # Service/EndpointSlice are fetched here (see _patch_fetchers above) but
+    # must not appear -- this proves the Workloads expansion excludes them,
+    # not merely that no data was available.
     node_ids = {n.id for n in graph.nodes}
-    assert node_ids == {"dep-1", "rs-1", "pod-1", "svc-1", "cm-1", "secret-1", "pvc-1", "eps-1"}
+    assert node_ids == {"dep-1", "rs-1", "pod-1", "cm-1", "secret-1", "pvc-1"}
     assert "cm-2" not in node_ids
+    assert "svc-1" not in node_ids
+    assert "eps-1" not in node_ids
 
     relations = {(e.source, e.target, e.relation) for e in graph.edges}
     assert ("pod-1", "cm-1", "uses") in relations
     assert ("pod-1", "secret-1", "uses") in relations
     assert ("pod-1", "pvc-1", "claims") in relations
-    assert ("svc-1", "eps-1", "exposes") in relations
-    assert ("eps-1", "pod-1", "targets") in relations
+    assert ("svc-1", "eps-1", "exposes") not in relations
+    assert ("eps-1", "pod-1", "targets") not in relations
 
 
 def test_shared_configmap_does_not_bridge_unrelated_pod_into_view(
@@ -200,18 +205,23 @@ def test_services_root_includes_all_service_types(monkeypatch, make_service):
     assert {n.id for n in graph.nodes} == {"svc-lb", "svc-cip"}
 
 
-def test_services_have_no_edges(monkeypatch, make_service, make_endpoint_slice, make_pod):
+def test_services_graph_includes_endpointslice_and_pod(monkeypatch, make_service, make_endpoint_slice, make_pod):
     svc = make_service("svc-1", "web", selector={"app": "web"})
     pod = make_pod("pod-1", "web-abc")
+    unrelated_pod = make_pod("pod-2", "standalone")
     eps = make_endpoint_slice(
         "eps-1", "web-xyz", service_name="web", pod_targets=[("web-abc", "pod-1", True)]
     )
-    _patch_fetchers(monkeypatch, {"Service": [svc], "EndpointSlice": [eps], "Pod": [pod]})
+    _patch_fetchers(monkeypatch, {"Service": [svc], "EndpointSlice": [eps], "Pod": [pod, unrelated_pod]})
 
     graph = GraphBuilder(mgr=None).build("network/services", namespace="ns", context=None)
 
-    assert {n.id for n in graph.nodes} == {"svc-1"}
-    assert graph.edges == []
+    assert {n.id for n in graph.nodes} == {"svc-1", "eps-1", "pod-1"}
+    assert "pod-2" not in {n.id for n in graph.nodes}
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("svc-1", "eps-1", "exposes") in relations
+    assert ("eps-1", "pod-1", "targets") in relations
 
 
 def test_nodes_have_no_edges(monkeypatch, make_node):
