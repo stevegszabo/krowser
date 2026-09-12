@@ -12,10 +12,22 @@ from krowser.main import app
 
 
 class FakeManager:
-    def __init__(self, crds=(), custom_objects=None):
+    def __init__(
+        self,
+        crds=(),
+        custom_objects=None,
+        cluster_roles=(),
+        cluster_role_bindings=(),
+        service_accounts=(),
+        pods=(),
+    ):
         self._crds = list(crds)
         # {(group, version, plural): {namespace_or_None: [item, ...]}}
         self._custom_objects = custom_objects or {}
+        self._cluster_roles = list(cluster_roles)
+        self._cluster_role_bindings = list(cluster_role_bindings)
+        self._service_accounts = list(service_accounts)
+        self._pods = list(pods)
 
     def list_contexts(self):
         return [ContextInfo(name="test-ctx", cluster="test-cluster", is_current=True)]
@@ -25,6 +37,31 @@ class FakeManager:
 
     def api_client_for(self, context):
         return ApiClient()
+
+    def core_v1(self, context):
+        service_accounts = self._service_accounts
+        pods = self._pods
+
+        class _Api:
+            def list_service_account_for_all_namespaces(self):
+                return type("_List", (), {"items": service_accounts})()
+
+            def list_namespaced_service_account(self, namespace):
+                return type("_List", (), {"items": [sa for sa in service_accounts if sa.metadata.namespace == namespace]})()
+
+            def read_namespaced_service_account(self, name, namespace):
+                for sa in service_accounts:
+                    if sa.metadata.name == name and sa.metadata.namespace == namespace:
+                        return sa
+                raise ApiException(status=404, reason="Not Found")
+
+            def list_pod_for_all_namespaces(self):
+                return type("_List", (), {"items": pods})()
+
+            def list_namespaced_pod(self, namespace):
+                return type("_List", (), {"items": [p for p in pods if p.metadata.namespace == namespace]})()
+
+        return _Api()
 
     def apiextensions_v1(self, context):
         crds = self._crds
@@ -37,6 +74,31 @@ class FakeManager:
                 for crd in crds:
                     if crd.metadata.name == name:
                         return crd
+                raise ApiException(status=404, reason="Not Found")
+
+        return _Api()
+
+    def rbac_authorization_v1(self, context):
+        cluster_roles = self._cluster_roles
+        cluster_role_bindings = self._cluster_role_bindings
+
+        class _Api:
+            def list_cluster_role(self):
+                return type("_List", (), {"items": cluster_roles})()
+
+            def read_cluster_role(self, name):
+                for role in cluster_roles:
+                    if role.metadata.name == name:
+                        return role
+                raise ApiException(status=404, reason="Not Found")
+
+            def list_cluster_role_binding(self):
+                return type("_List", (), {"items": cluster_role_bindings})()
+
+            def read_cluster_role_binding(self, name):
+                for binding in cluster_role_bindings:
+                    if binding.metadata.name == name:
+                        return binding
                 raise ApiException(status=404, reason="Not Found")
 
         return _Api()
@@ -133,14 +195,86 @@ def test_resource_types_endpoint_includes_dynamic_crds(make_client):
         "id": "customresources/widgets.example.com",
         "label": "widgets.example.com",
         "group": "Custom Resources",
+        "subgroup": None,
         "icon": "crd",
         "namespaced": True,
     }
 
 
+def test_resource_types_endpoint_inserts_dynamic_cluster_roles_after_nodes(make_client, make_cluster_role):
+    role = make_cluster_role("role-1", "view")
+    client = make_client(FakeManager(cluster_roles=[role]))
+
+    res = client.get("/api/resource-types")
+
+    assert res.status_code == 200
+    types = res.json()["resource_types"]
+    ids = [rt["id"] for rt in types]
+    nodes_index = ids.index("cluster/nodes")
+    assert types[nodes_index + 1] == {
+        "id": "clusterrole/view",
+        "label": "view",
+        "group": "Cluster",
+        "subgroup": "Cluster Roles",
+        "icon": "clusterrole",
+        "namespaced": False,
+    }
+    assert types[nodes_index + 2]["id"] == "configmaps"
+
+
 def test_graph_unknown_type_is_404(client):
     res = client.get("/api/graph", params={"type": "bogus"})
     assert res.status_code == 404
+
+
+def test_graph_shows_clusterrole_instance_with_its_binding(
+    make_client, make_cluster_role, make_cluster_role_binding
+):
+    role = make_cluster_role("role-1", "view")
+    bound_binding = make_cluster_role_binding("crb-1", "view-binding", role_name="view")
+    unrelated_binding = make_cluster_role_binding("crb-2", "other-binding", role_name="other-role")
+    client = make_client(
+        FakeManager(cluster_roles=[role], cluster_role_bindings=[bound_binding, unrelated_binding])
+    )
+
+    res = client.get("/api/graph", params={"type": "clusterrole/view"})
+
+    assert res.status_code == 200
+    body = res.json()
+    node_ids = {n["id"] for n in body["nodes"]}
+    assert node_ids == {"role-1", "crb-1"}
+    assert "crb-2" not in node_ids
+    assert {(e["source"], e["target"], e["relation"]) for e in body["edges"]} == {("crb-1", "role-1", "binds")}
+
+
+def test_graph_shows_clusterrole_bound_serviceaccount_and_its_pod(
+    make_client, make_cluster_role, make_cluster_role_binding, make_service_account, make_pod
+):
+    role = make_cluster_role("role-1", "view")
+    bound_binding = make_cluster_role_binding(
+        "crb-1", "view-binding", role_name="view",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="my-sa", namespace="ns")],
+    )
+    sa = make_service_account("sa-1", "my-sa", namespace="ns")
+    pod = make_pod("pod-1", "my-pod", namespace="ns", service_account_name="my-sa")
+    client = make_client(
+        FakeManager(
+            cluster_roles=[role],
+            cluster_role_bindings=[bound_binding],
+            service_accounts=[sa],
+            pods=[pod],
+        )
+    )
+
+    res = client.get("/api/graph", params={"type": "clusterrole/view"})
+
+    assert res.status_code == 200
+    body = res.json()
+    node_ids = {n["id"] for n in body["nodes"]}
+    assert node_ids == {"role-1", "crb-1", "sa-1", "pod-1"}
+    relations = {(e["source"], e["target"], e["relation"]) for e in body["edges"]}
+    assert ("crb-1", "sa-1", "binds") in relations
+    assert ("pod-1", "sa-1", "runs-as") in relations
 
 
 def test_graph_lists_custom_resource_instances(make_client):

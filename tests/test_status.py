@@ -69,6 +69,30 @@ def test_node_condition_health_mapping(make_node):
     assert (ready.status_label, cordoned.status_label) == ("Ready", "Cordoned")
 
 
+def test_cluster_role_reports_rule_count_badge(make_cluster_role):
+    node = build_node(make_cluster_role("cr-1", "view"), "ClusterRole", "clusterrole", True)
+    assert node.health == "unknown"
+    assert node.status_label == "1 rule"
+    assert node.badges[-1].text == "1 rule"
+
+
+def test_cluster_role_binding_reports_subject_count_badge(make_cluster_role_binding):
+    node = build_node(
+        make_cluster_role_binding("crb-1", "view-binding", role_name="view"),
+        "ClusterRoleBinding",
+        "clusterrolebinding",
+        True,
+    )
+    assert node.health == "unknown"
+    assert node.status_label == "1 subject"
+
+
+def test_service_account_reports_unknown_health(make_service_account):
+    node = build_node(make_service_account("sa-1", "my-sa"), "ServiceAccount", "serviceaccount", True)
+    assert node.health == "unknown"
+    assert node.status_label == "ServiceAccount"
+
+
 def test_custom_resource_kind_falls_back_to_unknown_health_and_carries_api_fields():
     # A custom resource instance's Kind is arbitrary/dynamic (from a CRD) and
     # never registered in _DESCRIBERS -- build_node must fall back cleanly

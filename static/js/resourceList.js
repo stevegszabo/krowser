@@ -8,17 +8,36 @@ const LEFT_PANE_ROW_CHROME = 16 + 10 + 16 + 16 + 3 + 8;
 function resourceList() {
   return {
     resizing: false,
+    // Every group starts collapsed on each fresh load (deliberately not
+    // persisted, unlike leftPaneWidth/leftPaneVisible) -- tracks which
+    // groups the user has expanded *this session* instead of which are
+    // collapsed, so "nothing expanded" naturally means "everything
+    // collapsed" without needing to know the group list upfront.
+    expandedGroups: [],
 
+    // One level of top-level groups, each holding an ordered list of "rows":
+    // either a plain resource-type item, or a nested sub-group (its own
+    // collapsible sub-header with its own items, e.g. Cluster's "Cluster
+    // Roles"). Consecutive entries sharing a `subgroup` collapse into one
+    // sub-group row, same as top-level `group` already does.
     get groupedTypes() {
       const types = this.$store.app.resourceTypes;
       const groups = [];
-      let current = null;
+      let currentGroup = null;
       for (const rt of types) {
-        if (rt.group && current && current.group === rt.group) {
-          current.items.push(rt);
+        if (!currentGroup || currentGroup.group !== rt.group) {
+          currentGroup = { group: rt.group, rows: [] };
+          groups.push(currentGroup);
+        }
+        if (rt.subgroup) {
+          const lastRow = currentGroup.rows[currentGroup.rows.length - 1];
+          if (lastRow && lastRow.subgroup === rt.subgroup) {
+            lastRow.items.push(rt);
+          } else {
+            currentGroup.rows.push({ subgroup: rt.subgroup, items: [rt] });
+          }
         } else {
-          current = { group: rt.group, items: [rt] };
-          groups.push(current);
+          currentGroup.rows.push({ item: rt });
         }
       }
       return groups;
@@ -26,6 +45,19 @@ function resourceList() {
 
     select(id) {
       this.$dispatch('select-type', id);
+    },
+
+    // `key` is a top-level group name (e.g. "Cluster") or a nested
+    // sub-group's compound key (e.g. "Cluster/Cluster Roles") -- both are
+    // just opaque strings here, tracked the same way.
+    isGroupCollapsed(key) {
+      return !this.expandedGroups.includes(key);
+    },
+
+    toggleGroup(key) {
+      this.expandedGroups = this.expandedGroups.includes(key)
+        ? this.expandedGroups.filter((g) => g !== key)
+        : [...this.expandedGroups, key];
     },
 
     // The pane may grow up to whatever width fully displays its longest

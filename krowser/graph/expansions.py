@@ -27,6 +27,15 @@ GRAPH_EXPANSIONS: dict[str, GraphExpansion] = {
     "workloads/cronjobs": GraphExpansion(("Job", "Pod") + WORKLOAD_RELATED_KINDS),
     "workloads/jobs": GraphExpansion(("Pod",) + WORKLOAD_RELATED_KINDS),
     "workloads/pods": GraphExpansion(WORKLOAD_RELATED_KINDS),
-    # Dynamic customresources/<crd-name> ids have no static entry here --
-    # GraphBuilder.build() falls back to an empty GraphExpansion for those.
+    # Dynamic customresources/<crd-name> and clusterrole/<name> ids have no
+    # static entry here -- GraphBuilder.build() falls back to
+    # DEFAULT_EXPANSION_BY_KIND (keyed by Kind, not id) or an empty
+    # GraphExpansion for those.
+}
+
+# Fallback expansion for a dynamic per-instance resource type (see
+# krowser.k8s.resource_types.ResourceTypeSpec.instance_name), keyed by Kind
+# since its id isn't known statically.
+DEFAULT_EXPANSION_BY_KIND: dict[str, GraphExpansion] = {
+    "ClusterRole": GraphExpansion(("ClusterRoleBinding", "ServiceAccount", "Pod")),
 }

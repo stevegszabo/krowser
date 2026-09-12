@@ -198,6 +198,85 @@ def link_pvc_to_pv(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_clusterrolebinding_to_clusterrole(world: World) -> list[GraphEdge]:
+    """A ClusterRoleBinding references the ClusterRole it grants via
+    roleRef.name, not an ownerReference, so this needs its own linker
+    (unlike Deployment->ReplicaSet->Pod etc., handled generically above)."""
+    roles_by_name = {r.metadata.name: r for r in world.get("ClusterRole", [])}
+    edges = []
+    for binding in world.get("ClusterRoleBinding", []):
+        role_ref = binding.role_ref
+        if role_ref.kind != "ClusterRole":
+            continue
+        role = roles_by_name.get(role_ref.name)
+        if role:
+            edges.append(
+                GraphEdge(
+                    id=f"binds:{binding.metadata.uid}:{role.metadata.uid}",
+                    source=binding.metadata.uid,
+                    target=role.metadata.uid,
+                    relation="binds",
+                )
+            )
+    return edges
+
+
+def link_clusterrolebinding_to_serviceaccount_subjects(world: World) -> list[GraphEdge]:
+    """A ClusterRoleBinding also "binds" its Subjects (who the grant applies
+    to), not just the ClusterRole -- of those, only ServiceAccount subjects
+    are ever fetched into the graph (User/Group aren't real cluster objects
+    krowser can look up)."""
+    service_accounts_by_key = {
+        (sa.metadata.namespace, sa.metadata.name): sa for sa in world.get("ServiceAccount", [])
+    }
+    edges = []
+    for binding in world.get("ClusterRoleBinding", []):
+        for subject in binding.subjects or []:
+            if subject.kind != "ServiceAccount":
+                continue
+            sa = service_accounts_by_key.get((subject.namespace, subject.name))
+            if sa:
+                edges.append(
+                    GraphEdge(
+                        id=f"binds:{binding.metadata.uid}:{sa.metadata.uid}",
+                        source=binding.metadata.uid,
+                        target=sa.metadata.uid,
+                        relation="binds",
+                    )
+                )
+    return edges
+
+
+def link_pod_to_serviceaccount(world: World) -> list[GraphEdge]:
+    """Deliberately its own "runs-as" relation rather than reusing "uses"
+    (like Pod->ConfigMap/Secret): "uses" is intentionally one-directional in
+    _reachable_uids (a root reaches the ConfigMap/Secret it uses, but that
+    never flows back out to other pods sharing it) specifically to stop a
+    widely-shared ConfigMap/Secret from bridging unrelated pods into view.
+    Here the traversal needs to run the other way -- from a ClusterRole's
+    bound ServiceAccount (the root's neighbor) out to the Pod running as it
+    -- so this needs the normal bidirectional reachability every other
+    relation gets, same as Pod->Node ("runs-on")."""
+    service_accounts_by_key = {
+        (sa.metadata.namespace, sa.metadata.name): sa for sa in world.get("ServiceAccount", [])
+    }
+    edges = []
+    for pod in world.get("Pod", []):
+        if not pod.spec.service_account_name:
+            continue
+        sa = service_accounts_by_key.get((pod.metadata.namespace, pod.spec.service_account_name))
+        if sa:
+            edges.append(
+                GraphEdge(
+                    id=f"runs-as:{pod.metadata.uid}:{sa.metadata.uid}",
+                    source=pod.metadata.uid,
+                    target=sa.metadata.uid,
+                    relation="runs-as",
+                )
+            )
+    return edges
+
+
 def link_pod_to_node(world: World) -> list[GraphEdge]:
     """Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry
     a real ownerReference back to their Node, which link_owner_references
@@ -285,6 +364,9 @@ LINKERS = [
     link_pod_to_secret,
     link_service_to_endpointslices,
     link_endpointslice_to_pods,
+    link_clusterrolebinding_to_clusterrole,
+    link_clusterrolebinding_to_serviceaccount_subjects,
+    link_pod_to_serviceaccount,
 ]
 
 

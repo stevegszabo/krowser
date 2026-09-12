@@ -4,7 +4,9 @@ from pydantic import BaseModel
 
 Health = Literal["healthy", "progressing", "degraded", "suspended", "unknown"]
 BadgeVariant = Literal["age", "status", "ready", "namespace", "misc"]
-Relation = Literal["owns", "routes-to", "claims", "binds", "uses", "exposes", "targets", "runs-on"]
+Relation = Literal[
+    "owns", "routes-to", "claims", "binds", "uses", "exposes", "targets", "runs-on", "runs-as"
+]
 
 
 class Badge(BaseModel):

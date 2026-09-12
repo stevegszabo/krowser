@@ -75,7 +75,9 @@ document.addEventListener('alpine:init', () => {
         store.contexts = contextsRes.contexts;
         store.context = contextsRes.current;
         store.resourceTypes = typesRes.resource_types;
-        store.selectedType = typesRes.resource_types[0]?.id ?? null;
+        // Nothing selected on load -- the resource pane starts empty until
+        // the user picks a type from the (all-collapsed) left-pane menu.
+        store.selectedType = null;
         await this.loadNamespaces();
       } catch (e) {
         store.error = e.message;

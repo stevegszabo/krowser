@@ -262,6 +262,30 @@ def _describe_node(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     return health, status_label, None, badges
 
 
+def _describe_service_account(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # No status/condition concept -- "unknown" health matches the existing
+    # ConfigMap/Secret precedent.
+    pull_secret_count = len(obj.image_pull_secrets or [])
+    if pull_secret_count:
+        status_label = f"{pull_secret_count} image pull secret{'s' if pull_secret_count != 1 else ''}"
+        return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
+    return "unknown", "ServiceAccount", None, []
+
+
+def _describe_cluster_role(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # RBAC policy objects carry no status/condition concept -- "unknown"
+    # health matches the existing ConfigMap/Secret precedent.
+    rule_count = len(obj.rules or [])
+    status_label = f"{rule_count} rule{'s' if rule_count != 1 else ''}"
+    return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
+
+
+def _describe_cluster_role_binding(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    subject_count = len(obj.subjects or [])
+    status_label = f"{subject_count} subject{'s' if subject_count != 1 else ''}"
+    return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
+
+
 def _describe_custom_resource(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     # Custom resource schemas are arbitrary and unknown to krowser -- unlike
     # every other describer here, there's no well-known status shape to read,
@@ -284,8 +308,11 @@ _DESCRIBERS = {
     "PersistentVolume": _describe_pv,
     "ConfigMap": _describe_config_map,
     "Secret": _describe_secret,
+    "ServiceAccount": _describe_service_account,
     "EndpointSlice": _describe_endpoint_slice,
     "Node": _describe_node,
+    "ClusterRole": _describe_cluster_role,
+    "ClusterRoleBinding": _describe_cluster_role_binding,
 }
 
 

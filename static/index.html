@@ -55,17 +55,59 @@
             @mousedown="startResize($event)"
           ></div>
           <div class="krw-left-pane-scroll">
-            <template x-for="group in groupedTypes" :key="group.group || group.items[0].id">
+            <template x-for="group in groupedTypes" :key="group.group">
               <div>
-                <div class="krw-group-header" x-show="group.group" x-text="group.group"></div>
-                <template x-for="rt in group.items" :key="rt.id">
-                  <div
-                    class="krw-type-row"
-                    :class="{ selected: $store.app.selectedType === rt.id }"
-                    @click="select(rt.id)"
-                  >
-                    <span x-html="window.ICONS[rt.icon] || window.ICONS.default"></span>
-                    <span x-text="rt.label"></span>
+                <div
+                  class="krw-group-header"
+                  x-show="group.group"
+                  :class="{ collapsed: isGroupCollapsed(group.group) }"
+                  @click="toggleGroup(group.group)"
+                >
+                  <span x-text="group.group"></span>
+                  <svg class="krw-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+                <template x-if="!isGroupCollapsed(group.group)">
+                  <div>
+                    <template x-for="row in group.rows" :key="row.item ? row.item.id : group.group + '/' + row.subgroup">
+                      <div>
+                        <template x-if="row.item">
+                          <div
+                            class="krw-type-row"
+                            :class="{ selected: $store.app.selectedType === row.item.id }"
+                            @click="select(row.item.id)"
+                          >
+                            <span x-html="window.ICONS[row.item.icon] || window.ICONS.default"></span>
+                            <span x-text="row.item.label"></span>
+                          </div>
+                        </template>
+                        <template x-if="row.subgroup">
+                          <div>
+                            <div
+                              class="krw-subgroup-header"
+                              :class="{ collapsed: isGroupCollapsed(group.group + '/' + row.subgroup) }"
+                              @click="toggleGroup(group.group + '/' + row.subgroup)"
+                            >
+                              <span x-text="row.subgroup"></span>
+                              <svg class="krw-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                            </div>
+                            <template x-if="!isGroupCollapsed(group.group + '/' + row.subgroup)">
+                              <div>
+                                <template x-for="rt in row.items" :key="rt.id">
+                                  <div
+                                    class="krw-type-row krw-type-row--nested"
+                                    :class="{ selected: $store.app.selectedType === rt.id }"
+                                    @click="select(rt.id)"
+                                  >
+                                    <span x-html="window.ICONS[rt.icon] || window.ICONS.default"></span>
+                                    <span x-text="rt.label"></span>
+                                  </div>
+                                </template>
+                              </div>
+                            </template>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
                   </div>
                 </template>
               </div>

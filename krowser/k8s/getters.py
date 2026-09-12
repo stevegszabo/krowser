@@ -56,6 +56,10 @@ def get_secret(mgr: KubeClientManager, context: str | None, namespace: str, name
     return _get("Secret", mgr.core_v1(context).read_namespaced_secret, name, namespace)
 
 
+def get_service_account(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
+    return _get("ServiceAccount", mgr.core_v1(context).read_namespaced_service_account, name, namespace)
+
+
 def get_persistent_volume_claim(
     mgr: KubeClientManager, context: str | None, namespace: str, name: str
 ) -> Any:
@@ -75,6 +79,16 @@ def get_persistent_volume(mgr: KubeClientManager, context: str | None, name: str
 def get_node(mgr: KubeClientManager, context: str | None, name: str) -> Any:
     # Cluster-scoped: no namespace variant exists.
     return _get("Node", mgr.core_v1(context).read_node, name)
+
+
+def get_cluster_role(mgr: KubeClientManager, context: str | None, name: str) -> Any:
+    # Cluster-scoped: no namespace variant exists.
+    return _get("ClusterRole", mgr.rbac_authorization_v1(context).read_cluster_role, name)
+
+
+def get_cluster_role_binding(mgr: KubeClientManager, context: str | None, name: str) -> Any:
+    # Cluster-scoped: no namespace variant exists.
+    return _get("ClusterRoleBinding", mgr.rbac_authorization_v1(context).read_cluster_role_binding, name)
 
 
 def get_crd(mgr: KubeClientManager, context: str | None, name: str) -> Any:
@@ -126,9 +140,12 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "Service": get_service,
     "ConfigMap": get_config_map,
     "Secret": get_secret,
+    "ServiceAccount": get_service_account,
     "PersistentVolumeClaim": get_persistent_volume_claim,
     "PersistentVolume": lambda mgr, context, namespace, name: get_persistent_volume(mgr, context, name),
     "Node": lambda mgr, context, namespace, name: get_node(mgr, context, name),
+    "ClusterRole": lambda mgr, context, namespace, name: get_cluster_role(mgr, context, name),
+    "ClusterRoleBinding": lambda mgr, context, namespace, name: get_cluster_role_binding(mgr, context, name),
     "Deployment": get_deployment,
     "StatefulSet": get_stateful_set,
     "DaemonSet": get_daemon_set,

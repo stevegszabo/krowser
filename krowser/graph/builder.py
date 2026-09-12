@@ -1,12 +1,13 @@
 from typing import Any
 
 from krowser.config import settings
-from krowser.graph.expansions import GRAPH_EXPANSIONS, GraphExpansion
+from krowser.graph.expansions import DEFAULT_EXPANSION_BY_KIND, GRAPH_EXPANSIONS, GraphExpansion
 from krowser.graph.models import Graph, GraphEdge, GraphNode
 from krowser.graph.relationships import build_edges
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.custom_resources import list_custom_resources
 from krowser.k8s.fetchers import FETCHERS_BY_KIND
+from krowser.k8s.getters import GETTERS_BY_KIND
 from krowser.k8s.resource_types import ICONS_BY_KIND, ResourceTypeSpec, get_resource_type
 from krowser.k8s.status import build_node
 
@@ -19,6 +20,11 @@ def fetch_root(
         # to PVs bound to a PVC in that namespace rather than ignoring the filter.
         pvs = FETCHERS_BY_KIND["PersistentVolume"](mgr, context, None)
         return [pv for pv in pvs if pv.spec.claim_ref and pv.spec.claim_ref.namespace == namespace]
+    if rt.instance_name is not None:
+        # A dynamic per-instance type (e.g. one specific ClusterRole): fetch
+        # just this one named object rather than listing every object of the
+        # kind.
+        return [GETTERS_BY_KIND[rt.kind](mgr, context, None, rt.instance_name)]
     if rt.api_group is not None:
         # A dynamic custom-resource type: no FETCHERS_BY_KIND entry (Kind is
         # arbitrary), fetched generically via CustomObjectsApi instead. A
@@ -62,10 +68,11 @@ class GraphBuilder:
 
     def build(self, type_id: str, namespace: str | None, context: str | None) -> Graph:
         rt = get_resource_type(type_id, self._mgr, context)
-        # Dynamic custom-resource types have no GRAPH_EXPANSIONS entry (their
-        # id isn't known statically); they never show related kinds, same as
-        # e.g. ConfigMaps.
-        expansion = GRAPH_EXPANSIONS.get(type_id, GraphExpansion(()))
+        # Dynamic types (custom resources, per-instance ClusterRoles) have no
+        # GRAPH_EXPANSIONS entry (their id isn't known statically); fall back
+        # to a per-Kind default (e.g. ClusterRole -> ClusterRoleBinding), or
+        # no related kinds at all (e.g. an arbitrary CRD, same as ConfigMaps).
+        expansion = GRAPH_EXPANSIONS.get(type_id) or DEFAULT_EXPANSION_BY_KIND.get(rt.kind, GraphExpansion(()))
 
         root_objects = fetch_root(self._mgr, context, namespace, type_id, rt)
         resource_count = len(root_objects)

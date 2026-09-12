@@ -7,6 +7,7 @@ const RELATION_LABEL = {
   exposes: 'exposes',
   targets: 'targets',
   'runs-on': 'runs on',
+  'runs-as': 'runs as',
 };
 
 function sameIdSet(elements, ids) {

@@ -26,6 +26,7 @@ def get_resource_types(
                 "id": rt.id,
                 "label": rt.label,
                 "group": rt.group,
+                "subgroup": rt.subgroup,
                 "icon": rt.icon,
                 "namespaced": rt.namespaced,
             }

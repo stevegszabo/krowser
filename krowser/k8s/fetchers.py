@@ -51,6 +51,13 @@ def list_secrets(mgr: KubeClientManager, context: str | None, namespace: str | N
     return _call("Secret", api.list_secret_for_all_namespaces)
 
 
+def list_service_accounts(mgr: KubeClientManager, context: str | None, namespace: str | None) -> list[Any]:
+    api = mgr.core_v1(context)
+    if namespace:
+        return _call("ServiceAccount", api.list_namespaced_service_account, namespace)
+    return _call("ServiceAccount", api.list_service_account_for_all_namespaces)
+
+
 def list_persistent_volume_claims(
     mgr: KubeClientManager, context: str | None, namespace: str | None
 ) -> list[Any]:
@@ -74,6 +81,18 @@ def list_nodes(mgr: KubeClientManager, context: str | None) -> list[Any]:
     # Cluster-scoped: no namespace variant exists.
     api = mgr.core_v1(context)
     return _call("Node", api.list_node)
+
+
+def list_cluster_roles(mgr: KubeClientManager, context: str | None) -> list[Any]:
+    # Cluster-scoped: no namespace variant exists.
+    api = mgr.rbac_authorization_v1(context)
+    return _call("ClusterRole", api.list_cluster_role)
+
+
+def list_cluster_role_bindings(mgr: KubeClientManager, context: str | None) -> list[Any]:
+    # Cluster-scoped: no namespace variant exists.
+    api = mgr.rbac_authorization_v1(context)
+    return _call("ClusterRoleBinding", api.list_cluster_role_binding)
 
 
 def list_crds(mgr: KubeClientManager, context: str | None) -> list[Any]:
@@ -178,9 +197,12 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "Service": list_services,
     "ConfigMap": list_config_maps,
     "Secret": list_secrets,
+    "ServiceAccount": list_service_accounts,
     "PersistentVolumeClaim": list_persistent_volume_claims,
     "PersistentVolume": lambda mgr, context, namespace: list_persistent_volumes(mgr, context),
     "Node": lambda mgr, context, namespace: list_nodes(mgr, context),
+    "ClusterRole": lambda mgr, context, namespace: list_cluster_roles(mgr, context),
+    "ClusterRoleBinding": lambda mgr, context, namespace: list_cluster_role_bindings(mgr, context),
     "Deployment": list_deployments,
     "StatefulSet": list_stateful_sets,
     "DaemonSet": list_daemon_sets,

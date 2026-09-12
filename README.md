@@ -9,9 +9,10 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 
 ## Features
 
-- Browse 13 built-in resource types grouped into **Cluster** (Nodes), **Config** (ConfigMaps, Secrets), **Network** (Ingresses, Services), **Storage** (PersistentVolumes, PersistentVolumeClaims), and **Workloads** (DaemonSets, Deployments, StatefulSets, CronJobs, Jobs, Pods), plus a **Custom Resources** group listing every CRD installed in the cluster — selecting one shows all of its instances
+- Browse 13 built-in resource types grouped into **Cluster** (Nodes), **Config** (ConfigMaps, Secrets), **Network** (Ingresses, Services), **Storage** (PersistentVolumes, PersistentVolumeClaims), and **Workloads** (DaemonSets, Deployments, StatefulSets, CronJobs, Jobs, Pods), plus every ClusterRole in the cluster listed individually under a nested **Cluster > Cluster Roles** sub-menu and every CRD under a **Custom Resources** group — selecting one ClusterRole shows just that role, its bound ClusterRoleBindings, any ServiceAccounts granted access as a subject, and the pods running as those ServiceAccounts; selecting a CRD shows all of its instances
+- Collapse/expand each left-pane group (CLUSTER, CONFIG, NETWORK, STORAGE, WORKLOADS, CUSTOM RESOURCES) independently, including the nested Cluster Roles sub-menu within Cluster
 - Filter by namespace (or view all namespaces at once) and by kubeconfig context
-- Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), and Service→EndpointSlice→Pod (shown on the Ingresses and Services views)
+- Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), Service→EndpointSlice→Pod (shown on the Ingresses and Services views), and ClusterRole→ClusterRoleBinding→ServiceAccount→Pod
 - Right-click any node for a context menu of actions, opening a resizable, read-only detail pane:
   - **Get \<kind\>** — the resource's full YAML, fetched fresh from the cluster
   - **Get pod description** (Pods only) — a `kubectl describe`-style summary (containers, conditions, volumes, and recent Events), built entirely via the Kubernetes API

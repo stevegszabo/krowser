@@ -55,11 +55,14 @@ def test_get_resource_type_unknown_raises():
 
 
 class _FakeCrdManager:
-    """Just enough of KubeClientManager for the dynamic CRD-discovery path:
-    list_crds()/get_crd() only ever call mgr.apiextensions_v1(context)."""
+    """Just enough of KubeClientManager for the dynamic CRD/ClusterRole
+    discovery paths: list_crds()/get_crd() only ever call
+    mgr.apiextensions_v1(context), and list_cluster_roles()/get_cluster_role()
+    only ever call mgr.rbac_authorization_v1(context)."""
 
-    def __init__(self, crds):
+    def __init__(self, crds=(), cluster_roles=()):
         self._crds = crds
+        self._cluster_roles = cluster_roles
 
     def apiextensions_v1(self, context):
         crds = self._crds
@@ -72,6 +75,21 @@ class _FakeCrdManager:
                 for crd in crds:
                     if crd.metadata.name == name:
                         return crd
+                raise ApiException(status=404, reason="Not Found")
+
+        return _Api()
+
+    def rbac_authorization_v1(self, context):
+        cluster_roles = self._cluster_roles
+
+        class _Api:
+            def list_cluster_role(self):
+                return type("_List", (), {"items": cluster_roles})()
+
+            def read_cluster_role(self, name):
+                for role in cluster_roles:
+                    if role.metadata.name == name:
+                        return role
                 raise ApiException(status=404, reason="Not Found")
 
         return _Api()
@@ -122,3 +140,52 @@ def test_get_resource_type_unknown_dynamic_id_raises():
     mgr = _FakeCrdManager([])
     with pytest.raises(UnknownResourceTypeError):
         get_resource_type("customresources/nope.example.com", mgr, None)
+
+
+def test_get_all_resource_types_inserts_cluster_roles_after_nodes(make_cluster_role):
+    role = make_cluster_role("role-1", "view")
+    mgr = _FakeCrdManager(cluster_roles=[role])
+
+    types = get_all_resource_types(mgr, None)
+
+    # Spliced in right after Nodes, nested one level deeper under the
+    # Cluster group's own "Cluster Roles" sub-header (CLUSTER > CLUSTER
+    # ROLES), not merged flat into "Cluster" and not its own top-level group.
+    nodes_index = next(i for i, rt in enumerate(types) if rt.id == "cluster/nodes")
+    rt = types[nodes_index + 1]
+    assert rt.id == "clusterrole/view"
+    assert rt.label == "view"
+    assert rt.group == "Cluster"
+    assert rt.subgroup == "Cluster Roles"
+    assert rt.kind == "ClusterRole"
+    assert rt.namespaced is False
+    assert rt.instance_name == "view"
+    # The entry right after it is the next built-in type, not another role.
+    assert types[nodes_index + 2].id == "configmaps"
+
+
+def test_get_all_resource_types_sorts_cluster_roles_by_label(make_cluster_role):
+    role_b = make_cluster_role("role-2", "view")
+    role_a = make_cluster_role("role-1", "edit")
+    mgr = _FakeCrdManager(cluster_roles=[role_b, role_a])
+
+    types = get_all_resource_types(mgr, None)
+
+    role_labels = [rt.label for rt in types if rt.kind == "ClusterRole"]
+    assert role_labels == ["edit", "view"]
+
+
+def test_get_resource_type_resolves_dynamic_cluster_role_id(make_cluster_role):
+    role = make_cluster_role("role-1", "view")
+    mgr = _FakeCrdManager(cluster_roles=[role])
+
+    rt = get_resource_type("clusterrole/view", mgr, None)
+
+    assert rt.kind == "ClusterRole"
+    assert rt.instance_name == "view"
+
+
+def test_get_resource_type_unknown_dynamic_cluster_role_id_raises():
+    mgr = _FakeCrdManager(cluster_roles=[])
+    with pytest.raises(UnknownResourceTypeError):
+        get_resource_type("clusterrole/nope", mgr, None)
