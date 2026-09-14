@@ -1,6 +1,6 @@
 # krowser
 
-A web app for browsing the resources in a Kubernetes cluster and how they relate to each other — pick a resource type, filter by namespace, and see an ArgoCD-style graph of ownership, networking, and storage relationships. Click a node to select it; right-click for actions — view its full YAML, and for Pods, get a description or view container logs — all read-only.
+A web app for browsing the resources in a Kubernetes cluster and how they relate to each other — pick a resource type, filter by namespace, and see an ArgoCD-style graph of ownership, networking, and storage relationships. Click a node to select it; right-click for actions — view its full YAML, and for Pods, get a description, view container logs, or open an interactive `kubectl exec`-style terminal.
 
 ## Screenshots
 
@@ -13,12 +13,13 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 - Collapse/expand each left-pane group (CLUSTER, CONFIG, NETWORK, STORAGE, WORKLOADS, CUSTOM RESOURCES) independently, including the nested Cluster Roles sub-menu within Cluster
 - Filter by namespace (or view all namespaces at once) and by kubeconfig context
 - Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), Service→EndpointSlice→Pod (shown on the Ingresses and Services views), and ClusterRole→ClusterRoleBinding→ServiceAccount→Pod
-- Right-click any node for a context menu of actions, opening a resizable, read-only detail pane:
+- Right-click any node for a context menu of actions, opening a resizable detail pane:
   - **Get \<kind\>** — the resource's full YAML, fetched fresh from the cluster
   - **Get pod description** (Pods only) — a `kubectl describe`-style summary (containers, conditions, volumes, and recent Events), built entirely via the Kubernetes API
-  - **Get pod logs - \<container\>** (Pods only, one per container) — the last 100 log lines for that container
+  - **Get pod logs** (Pods only) — the last 100 log lines for the pod's first container, with a dropdown at the top of the pane to switch to any other container, plus a text filter that narrows to matching lines and highlights the matched text
+  - **Execute command** (Pods only) — a `kubectl exec`-style terminal: pick a container from the dropdown, type a command (a one-shot command like `date`, or an interactive one like `sh`/`bash`), and press Run to stream it live in a real terminal (powered by xterm.js) over a WebSocket to the Kubernetes exec API, with full TTY resize support
 - Auto-refreshes on a polling interval without resetting your pan/zoom or losing your current selection unless the underlying resource set actually changes
-- Read-only — no create/edit/delete/scale actions
+- Read-only with respect to cluster resources — no create/edit/delete/scale actions; the one exception is **Execute command**, which runs a process inside a pod's container exactly like `kubectl exec`
 
 ## Requirements
 
@@ -66,5 +67,5 @@ pytest
 | `static/index.html` | App shell |
 | `static/css/` | Styles |
 | `static/js/` | Alpine.js components + Cytoscape.js graph rendering (no build step) |
-| `static/vendor/` | Vendored JS dependencies (Alpine, Cytoscape + extensions) |
+| `static/vendor/` | Vendored JS dependencies (Alpine, Cytoscape + extensions, xterm.js) |
 | `tests/` | Test suite |

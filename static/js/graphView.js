@@ -102,9 +102,9 @@ function graphView() {
         const data = this.hoveredNode.data();
         const containers = data.containers || [];
         // Clamp so the menu can't render past the right/bottom edge of the
-        // window. Item count varies (one extra "Get pod logs - X" row per
-        // container), so the height estimate accounts for that.
-        const itemCount = 2 + containers.length;
+        // window. Pod nodes get three extra rows (Get pod logs, Get pod
+        // description, Execute command) beyond the universal "Get <kind>" row.
+        const itemCount = data.kind === 'Pod' ? 4 : 1;
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -312,7 +312,18 @@ function graphView() {
       this.contextMenu.visible = false;
     },
 
-    viewLogsFromContextMenu(container) {
+    execFromContextMenu() {
+      const container = (this.contextMenu.resource.containers || [])[0];
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'exec', container };
+      this.contextMenu.visible = false;
+    },
+
+    viewLogsFromContextMenu() {
+      // Defaults to the first container (init containers first, then
+      // regular -- see krowser.k8s.status.build_node); the detail pane's own
+      // dropdown lets the user switch to any other container afterward.
+      const container = (this.contextMenu.resource.containers || [])[0];
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'logs', container };
       this.contextMenu.visible = false;

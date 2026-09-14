@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Krowser</title>
+  <link rel="stylesheet" href="vendor/xterm/xterm.css" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -171,18 +172,21 @@
               @click="selectFromContextMenu()"
               x-text="'Get ' + (contextMenu.resource ? contextMenu.resource.kind.toLowerCase() : 'resource')"
             ></button>
-            <template x-for="containerName in (contextMenu.resource ? contextMenu.resource.containers : [])" :key="containerName">
-              <button
-                class="krw-context-menu-item"
-                @click="viewLogsFromContextMenu(containerName)"
-                x-text="'Get pod logs - ' + containerName"
-              ></button>
-            </template>
+            <button
+              class="krw-context-menu-item"
+              x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
+              @click="viewLogsFromContextMenu()"
+            >Get pod logs</button>
             <button
               class="krw-context-menu-item"
               x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
               @click="describeFromContextMenu()"
             >Get pod description</button>
+            <button
+              class="krw-context-menu-item"
+              x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
+              @click="execFromContextMenu()"
+            >Execute command</button>
           </div>
         </template>
       </main>
@@ -205,11 +209,70 @@
               <span class="krw-detail-kind" x-text="$store.app.detailResource.kind"></span>
               <span class="krw-detail-name" x-text="$store.app.detailResource.name"></span>
               <span class="krw-detail-mode" x-show="viewMode === 'describe'">Describe</span>
-              <span class="krw-detail-mode" x-show="viewMode === 'logs'" x-text="'Logs: ' + $store.app.detailResource.container"></span>
+              <template x-if="viewMode === 'logs'">
+                <span class="krw-detail-mode-group">
+                  <span class="krw-detail-mode">Logs:</span>
+                  <select
+                    class="krw-detail-container-select"
+                    :value="$store.app.detailResource.container"
+                    @change="changeLogContainer($event.target.value)"
+                  >
+                    <template x-for="c in ($store.app.detailResource.containers || [])" :key="c">
+                      <option :value="c" x-text="c"></option>
+                    </template>
+                  </select>
+                </span>
+              </template>
+              <template x-if="viewMode === 'exec'">
+                <span class="krw-detail-mode-group">
+                  <span class="krw-detail-mode">Exec:</span>
+                  <select
+                    class="krw-detail-container-select"
+                    :value="$store.app.detailResource.container"
+                    @change="changeExecContainer($event.target.value)"
+                  >
+                    <template x-for="c in ($store.app.detailResource.containers || [])" :key="c">
+                      <option :value="c" x-text="c"></option>
+                    </template>
+                  </select>
+                </span>
+              </template>
             </div>
             <button class="krw-detail-close" @click="close()" title="Close">&times;</button>
           </div>
-          <div class="krw-detail-body">
+          <template x-if="viewMode === 'logs'">
+            <div class="krw-log-toolbar">
+              <input
+                type="text"
+                class="krw-log-filter-input"
+                placeholder="Filter logs&hellip;"
+                x-model="logFilter"
+              />
+            </div>
+          </template>
+          <template x-if="viewMode === 'exec'">
+            <div class="krw-exec-toolbar">
+              <input
+                type="text"
+                class="krw-exec-command-input"
+                placeholder="Command, e.g. bash or date"
+                x-model="execCommand"
+                @keydown.enter="runExec()"
+              />
+              <button
+                class="krw-exec-run-btn"
+                @click="runExec()"
+                :disabled="execRunning || !execCommand.trim()"
+              >Run</button>
+              <button
+                class="krw-exec-stop-btn"
+                @click="stopExec()"
+                x-show="execRunning"
+              >Stop</button>
+              <span class="krw-exec-status" x-show="execExitInfo" x-text="execExitInfo"></span>
+            </div>
+          </template>
+          <div class="krw-detail-body" :class="{ 'krw-detail-body-exec': viewMode === 'exec' }">
             <template x-if="loading">
               <div class="krw-detail-message">Loading&hellip;</div>
             </template>
@@ -230,7 +293,10 @@
               </div>
             </template>
             <template x-if="!loading && !error && viewMode === 'logs'">
-              <pre class="krw-logs" x-text="logsText"></pre>
+              <pre class="krw-logs" x-html="filteredLogsHtml"></pre>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'exec'">
+              <div class="krw-exec-terminal" x-ref="execTerminal"></div>
             </template>
           </div>
         </aside>
@@ -241,6 +307,8 @@
   <script src="vendor/cytoscape/cytoscape.min.js"></script>
   <script src="vendor/cytoscape/cytoscape-dagre.js"></script>
   <script src="vendor/cytoscape/cytoscape-node-html-label.js"></script>
+  <script src="vendor/xterm/xterm.js"></script>
+  <script src="vendor/xterm/xterm-addon-fit.js"></script>
   <script src="js/icons.js"></script>
   <script>window.ICONS = ICONS;</script>
   <script src="js/api.js"></script>
