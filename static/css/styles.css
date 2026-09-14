@@ -590,8 +590,7 @@ html, body {
   font-size: 12px;
   line-height: 1.5;
   color: var(--ink);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
 }
 
 .krw-logs {
@@ -671,8 +670,8 @@ html, body {
 }
 
 .krw-tree-value {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  flex-shrink: 0;
 }
 
 .krw-tree-value--string { color: var(--ink); }
