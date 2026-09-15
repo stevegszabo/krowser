@@ -1,5 +1,8 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
+from kubernetes.stream.ws_client import ERROR_CHANNEL
 
 import krowser.api.routes_exec as routes_exec_module
 from krowser.api.deps import get_kube_client_manager
@@ -10,11 +13,15 @@ from tests.test_api_routes import FakeManager
 class FakeWSClient:
     """Stands in for kubernetes.stream.ws_client.WSClient: a queue of
     (channel, data) chunks drained one per update() call, exactly like the
-    real client buffers one frame at a time off the socket."""
+    real client buffers one frame at a time off the socket. read_channel()
+    models the final Status object Kubernetes sends on ERROR_CHANNEL when a
+    session ends -- either a plain exit code, or (when exec itself fails to
+    start, e.g. command not found) a human-readable error_message."""
 
-    def __init__(self, chunks=(), returncode=0):
+    def __init__(self, chunks=(), returncode=0, error_message=None):
         self._chunks = list(chunks)
         self._returncode = returncode
+        self._error_message = error_message
         self._open = True
         self._pending = {"stdout": None, "stderr": None}
         self.stdin_writes = []
@@ -57,9 +64,23 @@ class FakeWSClient:
         self._open = False
         self.closed = True
 
-    @property
-    def returncode(self):
-        return self._returncode
+    def read_channel(self, channel):
+        if channel != ERROR_CHANNEL:
+            return ""
+        if self._error_message is not None:
+            status = {
+                "status": "Failure",
+                "message": self._error_message,
+                "details": {"causes": [{"message": self._error_message}]},
+            }
+        elif self._returncode == 0:
+            status = {"status": "Success"}
+        else:
+            status = {
+                "status": "Failure",
+                "details": {"causes": [{"message": str(self._returncode)}]},
+            }
+        return json.dumps(status)
 
 
 @pytest.fixture
@@ -115,6 +136,18 @@ def test_pod_exec_splits_command_string_into_argv(client, monkeypatch):
         assert ws.receive_json() == {"type": "exit", "data": 0}
 
     assert captured["command"] == ["echo", "hello", "world"]
+
+
+def test_pod_exec_reports_command_not_found_error(client, monkeypatch):
+    message = 'exec: "badcommand": executable file not found in $PATH'
+    fake = FakeWSClient(chunks=[], error_message=message)
+    monkeypatch.setattr(routes_exec_module, "open_exec_stream", lambda *a, **k: fake)
+
+    with client.websocket_connect(
+        "/api/pod-exec?name=web&namespace=ns&container=app&command=badcommand"
+    ) as ws:
+        assert ws.receive_json() == {"type": "error", "data": message}
+        assert ws.receive_json() == {"type": "exit", "data": None}
 
 
 def test_pod_exec_reports_connection_error(client, monkeypatch):

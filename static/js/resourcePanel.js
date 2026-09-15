@@ -40,6 +40,7 @@ function resourcePanel() {
     execRunning: false,
     execStarted: false,
     execExitInfo: '',
+    execFailed: false,
     viewMode: 'yaml',
     loading: false,
     error: null,
@@ -256,6 +257,7 @@ function resourcePanel() {
       }
       this.execStarted = true;
       this.execExitInfo = '';
+      this.execFailed = false;
       this.execRunning = true;
 
       const params = new URLSearchParams({
@@ -279,9 +281,14 @@ function resourcePanel() {
           this._execTerm.write(msg.data);
         } else if (msg.type === 'error') {
           this._execTerm.write(`\r\n\x1b[31m${msg.data}\x1b[0m\r\n`);
+          this.execFailed = true;
           this.execRunning = false;
         } else if (msg.type === 'exit') {
-          this.execExitInfo = msg.data === null ? 'exited' : `exited (${msg.data})`;
+          if (this.execFailed) {
+            this.execExitInfo = 'failed';
+          } else {
+            this.execExitInfo = msg.data === null ? 'exited' : `exited (${msg.data})`;
+          }
           this.execRunning = false;
         }
       };
@@ -317,6 +324,7 @@ function resourcePanel() {
       this._execFitAddon = null;
       this.execCommand = '';
       this.execExitInfo = '';
+      this.execFailed = false;
       this.execStarted = false;
     },
 

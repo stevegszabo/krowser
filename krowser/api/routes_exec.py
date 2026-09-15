@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from kubernetes.stream.ws_client import RESIZE_CHANNEL
 
 from krowser.api.deps import get_kube_client_manager
-from krowser.k8s.pod_exec import open_exec_stream
+from krowser.k8s.pod_exec import open_exec_stream, read_exec_result
 
 router = APIRouter(prefix="/api", tags=["exec"])
 
@@ -59,9 +59,13 @@ async def pod_exec(
             pass
         finally:
             try:
-                returncode = ws_client.returncode
+                returncode, error_message = read_exec_result(ws_client)
             except Exception:
-                returncode = None
+                returncode, error_message = None, None
+            if error_message:
+                asyncio.run_coroutine_threadsafe(
+                    websocket.send_json({"type": "error", "data": error_message}), loop
+                )
             asyncio.run_coroutine_threadsafe(
                 websocket.send_json({"type": "exit", "data": returncode}), loop
             )

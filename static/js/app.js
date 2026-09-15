@@ -30,7 +30,7 @@ document.addEventListener('alpine:init', () => {
     contexts: [],
     context: null,
     namespaces: [],
-    namespace: '', // '' = "All namespaces"
+    namespace: 'default', // '' = "All namespaces"
     resourceTypes: [],
     selectedType: null,
     graph: null,
@@ -75,9 +75,12 @@ document.addEventListener('alpine:init', () => {
         store.contexts = contextsRes.contexts;
         store.context = contextsRes.current;
         store.resourceTypes = typesRes.resource_types;
-        // Nothing selected on load -- the resource pane starts empty until
-        // the user picks a type from the (all-collapsed) left-pane menu.
-        store.selectedType = null;
+        // Pods is selected by default on load (Workloads is pre-expanded in
+        // the left-pane menu to match, see resourceList.js), falling back to
+        // nothing selected if it's ever missing from the type list.
+        store.selectedType = store.resourceTypes.some((rt) => rt.id === 'workloads/pods')
+          ? 'workloads/pods'
+          : null;
         await this.loadNamespaces();
       } catch (e) {
         store.error = e.message;

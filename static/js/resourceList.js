@@ -12,8 +12,9 @@ function resourceList() {
     // persisted, unlike leftPaneWidth/leftPaneVisible) -- tracks which
     // groups the user has expanded *this session* instead of which are
     // collapsed, so "nothing expanded" naturally means "everything
-    // collapsed" without needing to know the group list upfront.
-    expandedGroups: [],
+    // collapsed" without needing to know the group list upfront. Workloads
+    // starts expanded since Pods is the default selection on load.
+    expandedGroups: ['Workloads'],
 
     // One level of top-level groups, each holding an ordered list of "rows":
     // either a plain resource-type item, or a nested sub-group (its own

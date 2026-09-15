@@ -25,6 +25,11 @@ function graphView() {
     zoomPct: 100,
     legendOpen: false,
     lastSelectionKey: null,
+    // The very first graph the app renders after loading defaults to a
+    // fixed 100% zoom instead of the usual fit-to-screen; cleared after
+    // that first render so later type/namespace/context switches keep
+    // fitting the whole graph on screen as before.
+    isInitialRender: true,
     contextMenu: { visible: false, x: 0, y: 0, resource: null },
     hoveredNode: null,
 
@@ -273,9 +278,13 @@ function graphView() {
         // guarantee the final state matches exactly what was captured.
         this.cy.zoom(preservedView.zoom);
         this.cy.pan(preservedView.pan);
+      } else if (this.isInitialRender) {
+        this.cy.zoom(1);
+        this.cy.center();
       } else {
         this.cy.fit(undefined, 40);
       }
+      this.isInitialRender = false;
     },
 
     fit() {
