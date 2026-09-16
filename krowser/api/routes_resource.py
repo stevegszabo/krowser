@@ -6,6 +6,7 @@ from krowser.api.errors import to_http_exception
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.getters import GETTERS_BY_KIND, get_pod_events, get_pod_logs
 from krowser.k8s.pod_describe import describe_pod
+from krowser.kubescape_scan import scan_workload
 from krowser.vuln_scan import scan_image
 
 router = APIRouter(prefix="/api", tags=["resource"])
@@ -84,6 +85,21 @@ def get_pod_vulnscan(
         result = scan_image(image)
     except HTTPException:
         raise
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return result
+
+
+@router.get("/workload-kubescan")
+def get_workload_kubescan(
+    kind: str,
+    name: str,
+    namespace: str,
+    context: str | None = None,
+):
+    try:
+        result = scan_workload(kind, namespace, name, context)
     except Exception as exc:
         raise to_http_exception(exc) from exc
 

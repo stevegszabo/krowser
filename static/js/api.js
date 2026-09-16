@@ -31,4 +31,5 @@ const api = {
   getPodDescribe: (params) => apiGet('/api/pod-describe', params),
   getPodLogs: (params) => apiGet('/api/pod-logs', params),
   getPodVulnScan: (params) => apiGet('/api/pod-vulnscan', params),
+  getWorkloadKubescan: (params) => apiGet('/api/workload-kubescan', params),
 };

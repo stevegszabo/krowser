@@ -4,17 +4,9 @@ import subprocess
 import time
 
 from krowser.config import settings
+from krowser.scan_errors import ScanFailedError, ScannerUnavailableError
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4}
-
-
-class ScannerUnavailableError(RuntimeError):
-    """Raised when the configured scanner binary isn't found on PATH."""
-
-
-class ScanFailedError(RuntimeError):
-    """Raised when the scanner ran but failed, timed out, or returned output
-    that couldn't be parsed."""
 
 
 # Small in-memory cache -- many pods commonly share a base image, so

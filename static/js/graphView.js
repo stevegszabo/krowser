@@ -9,6 +9,11 @@ const RELATION_LABEL = {
   'runs-on': 'runs on',
 };
 
+// Kubescape's "scan workload" refuses to scan a Pod that has an owner (which
+// is virtually every Pod krowser shows), so "Scan with Kubescape" is offered
+// only for these top-level controller kinds -- never Pod.
+const WORKLOAD_CONTROLLER_KINDS = ['DaemonSet', 'Deployment', 'StatefulSet', 'CronJob', 'Job'];
+
 function sameIdSet(elements, ids) {
   if (elements.length !== ids.size) return false;
   for (let i = 0; i < elements.length; i++) {
@@ -107,9 +112,11 @@ function graphView() {
         const containers = data.containers || [];
         // Clamp so the menu can't render past the right/bottom edge of the
         // window. Pod nodes get four extra rows (Get pod logs, Get pod
-        // description, Execute command, Scan for vulnerabilities) beyond
-        // the universal "Get <kind>" row.
-        const itemCount = data.kind === 'Pod' ? 5 : 1;
+        // description, Execute command, Scan for vulnerabilities); workload
+        // controller kinds get one extra row (Scan with Kubescape); both are
+        // on top of the universal "Get <kind>" row.
+        const itemCount =
+          1 + (data.kind === 'Pod' ? 4 : 0) + (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0);
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -329,6 +336,12 @@ function graphView() {
       const container = (this.contextMenu.resource.containers || [])[0];
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'vulnscan', container };
+      this.contextMenu.visible = false;
+    },
+
+    kubescanFromContextMenu() {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'kubescan' };
       this.contextMenu.visible = false;
     },
 

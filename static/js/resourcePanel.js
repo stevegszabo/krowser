@@ -42,6 +42,7 @@ function resourcePanel() {
     execExitInfo: '',
     execFailed: false,
     scanResults: null,
+    kubescanResults: null,
     viewMode: 'yaml',
     loading: false,
     error: null,
@@ -50,6 +51,7 @@ function resourcePanel() {
     _lastResourceId: null,
     _lastExecKey: null,
     _lastScanKey: null,
+    _lastKubescanKey: null,
     _execSocket: null,
     _execTerm: null,
     _execFitAddon: null,
@@ -126,6 +128,7 @@ function resourcePanel() {
         this.logFilter = '';
         this.error = null;
         this.scanResults = null;
+        this.kubescanResults = null;
         this.setLoading(false);
         this.resetExec();
         return;
@@ -165,6 +168,18 @@ function resourcePanel() {
         if (scanKey !== this._lastScanKey) {
           this._lastScanKey = scanKey;
           this.scanResults = null;
+        }
+        return;
+      }
+
+      if (this.viewMode === 'kubescan') {
+        this.setLoading(false);
+        this.error = null;
+        // Same deliberate user-trigger pattern as vulnscan, above -- no
+        // container dimension here since Kubescape scans the whole resource.
+        if (selected.id !== this._lastKubescanKey) {
+          this._lastKubescanKey = selected.id;
+          this.kubescanResults = null;
         }
         return;
       }
@@ -261,6 +276,33 @@ function resourcePanel() {
         if (requestId !== this.requestSeq) return;
         this.error = e.message;
         this.scanResults = null;
+      } finally {
+        if (requestId === this.requestSeq) this.setLoading(false);
+      }
+    },
+
+    // Same user-triggered shape as runScan(), above, but scans the whole
+    // resource's configuration via Kubescape rather than one container's
+    // image via Trivy -- no `container` param needed.
+    async runKubescan() {
+      const selected = this.$store.app.detailResource;
+      if (!selected) return;
+      const requestId = ++this.requestSeq;
+      this.setLoading(true);
+      this.error = null;
+      try {
+        const res = await api.getWorkloadKubescan({
+          kind: selected.kind,
+          namespace: selected.namespace,
+          name: selected.name,
+          context: this.$store.app.context,
+        });
+        if (requestId !== this.requestSeq) return;
+        this.kubescanResults = res;
+      } catch (e) {
+        if (requestId !== this.requestSeq) return;
+        this.error = e.message;
+        this.kubescanResults = null;
       } finally {
         if (requestId === this.requestSeq) this.setLoading(false);
       }

@@ -162,6 +162,11 @@
               x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
               @click="scanFromContextMenu()"
             >Scan for vulnerabilities</button>
+            <button
+              class="krw-context-menu-item"
+              x-show="contextMenu.resource && ['DaemonSet', 'Deployment', 'StatefulSet', 'CronJob', 'Job'].includes(contextMenu.resource.kind)"
+              @click="kubescanFromContextMenu()"
+            >Scan with Kubescape</button>
           </div>
         </template>
       </main>
@@ -184,6 +189,7 @@
               <span class="krw-detail-kind" x-text="$store.app.detailResource.kind"></span>
               <span class="krw-detail-name" x-text="$store.app.detailResource.name"></span>
               <span class="krw-detail-mode" x-show="viewMode === 'describe'">Describe</span>
+              <span class="krw-detail-mode" x-show="viewMode === 'kubescan'">Kubescape</span>
               <template x-if="viewMode === 'logs'">
                 <span class="krw-detail-mode-group">
                   <span class="krw-detail-mode">Logs:</span>
@@ -267,6 +273,12 @@
               <span class="krw-exec-status" x-show="scanResults" x-text="'image: ' + (scanResults ? scanResults.image : '')"></span>
             </div>
           </template>
+          <template x-if="viewMode === 'kubescan'">
+            <div class="krw-vulnscan-toolbar">
+              <button class="krw-exec-run-btn" @click="runKubescan()" :disabled="loading">Scan</button>
+              <span class="krw-exec-status" x-show="kubescanResults" x-text="'compliance score: ' + (kubescanResults ? kubescanResults.score : '') + '%'"></span>
+            </div>
+          </template>
           <div class="krw-detail-body" :class="{ 'krw-detail-body-exec': viewMode === 'exec' }">
             <template x-if="loading">
               <div class="krw-detail-message">Loading&hellip;</div>
@@ -319,6 +331,39 @@
                           <span class="krw-vulnscan-id" x-text="finding.id"></span>
                           <span class="krw-vulnscan-pkg" x-text="finding.package + ' ' + (finding.installed_version || '')"></span>
                           <span class="krw-vulnscan-fixed" x-show="finding.fixed_version" x-text="'fixed in ' + finding.fixed_version"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'kubescan'">
+              <div class="krw-vulnscan">
+                <template x-if="!kubescanResults">
+                  <div class="krw-detail-message">Click Scan to check this resource's configuration with Kubescape.</div>
+                </template>
+                <template x-if="kubescanResults && kubescanResults.findings.length === 0">
+                  <div class="krw-detail-message">No failed controls found.</div>
+                </template>
+                <template x-if="kubescanResults && kubescanResults.findings.length > 0">
+                  <div>
+                    <div class="krw-vulnscan-summary">
+                      <template x-for="sev in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']" :key="sev">
+                        <span
+                          class="krw-badge krw-vulnscan-pill"
+                          :class="'krw-badge-' + sev.toLowerCase()"
+                          x-show="kubescanResults.summary[sev] > 0"
+                        ><span x-text="kubescanResults.summary[sev]"></span>&nbsp;<span x-text="sev"></span></span>
+                      </template>
+                    </div>
+                    <div class="krw-vulnscan-list">
+                      <template x-for="finding in kubescanResults.findings" :key="finding.id">
+                        <div class="krw-vulnscan-row">
+                          <span class="krw-badge krw-vulnscan-severity" :class="'krw-badge-' + finding.severity.toLowerCase()" x-text="finding.severity"></span>
+                          <span class="krw-vulnscan-id" x-text="finding.id"></span>
+                          <span class="krw-vulnscan-pkg" x-text="finding.name"></span>
+                          <span class="krw-vulnscan-fixed" x-show="finding.category" x-text="finding.category"></span>
                         </div>
                       </template>
                     </div>

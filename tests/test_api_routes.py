@@ -281,3 +281,48 @@ def test_pod_vulnscan_maps_scan_failed_to_502(client, monkeypatch, make_pod):
     )
 
     assert res.status_code == 502
+
+
+def test_workload_kubescan_passes_params_through(client, monkeypatch):
+    captured = {}
+
+    def fake_scan_workload(kind, namespace, name, context):
+        captured.update(kind=kind, namespace=namespace, name=name, context=context)
+        return {"score": 100, "summary": {}, "findings": []}
+
+    monkeypatch.setattr(routes_resource_module, "scan_workload", fake_scan_workload)
+
+    res = client.get(
+        "/api/workload-kubescan",
+        params={"kind": "Deployment", "name": "web", "namespace": "ns", "context": "my-ctx"},
+    )
+
+    assert res.status_code == 200
+    assert captured == {"kind": "Deployment", "namespace": "ns", "name": "web", "context": "my-ctx"}
+    assert res.json() == {"score": 100, "summary": {}, "findings": []}
+
+
+def test_workload_kubescan_maps_scanner_unavailable_to_503(client, monkeypatch):
+    def _raise(kind, namespace, name, context):
+        raise ScannerUnavailableError("kubescape not found on PATH")
+
+    monkeypatch.setattr(routes_resource_module, "scan_workload", _raise)
+
+    res = client.get(
+        "/api/workload-kubescan", params={"kind": "Deployment", "name": "web", "namespace": "ns"}
+    )
+
+    assert res.status_code == 503
+
+
+def test_workload_kubescan_maps_scan_failed_to_502(client, monkeypatch):
+    def _raise(kind, namespace, name, context):
+        raise ScanFailedError("scan failed")
+
+    monkeypatch.setattr(routes_resource_module, "scan_workload", _raise)
+
+    res = client.get(
+        "/api/workload-kubescan", params={"kind": "Deployment", "name": "web", "namespace": "ns"}
+    )
+
+    assert res.status_code == 502
