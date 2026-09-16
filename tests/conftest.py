@@ -33,7 +33,6 @@ def make_pod():
         init_containers=None,
         image_pull_secrets=None,
         node_name=None,
-        service_account_name=None,
     ):
         return k8s.V1Pod(
             metadata=_meta(uid, name, namespace, owner_refs, labels),
@@ -43,7 +42,6 @@ def make_pod():
                 volumes=volumes or [],
                 image_pull_secrets=image_pull_secrets,
                 node_name=node_name,
-                service_account_name=service_account_name,
             ),
             status=k8s.V1PodStatus(
                 phase=phase,
@@ -186,56 +184,6 @@ def make_node():
                     os_image="Ubuntu 24.04",
                     system_uuid="uuid-1",
                 ),
-            ),
-        )
-
-    return _make
-
-
-@pytest.fixture
-def make_cluster_role():
-    def _make(uid, name, rules=None):
-        return k8s.V1ClusterRole(
-            metadata=_meta(uid, name, namespace=None),
-            rules=rules if rules is not None else [k8s.V1PolicyRule(api_groups=[""], resources=["pods"], verbs=["get", "list"])],
-        )
-
-    return _make
-
-
-@pytest.fixture
-def make_cluster_role_binding():
-    def _make(uid, name, role_name, subjects=None):
-        return k8s.V1ClusterRoleBinding(
-            metadata=_meta(uid, name, namespace=None),
-            role_ref=k8s.V1RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=role_name),
-            subjects=subjects if subjects is not None else [k8s.RbacV1Subject(kind="User", name="alice")],
-        )
-
-    return _make
-
-
-@pytest.fixture
-def make_service_account():
-    def _make(uid, name, namespace="ns"):
-        return k8s.V1ServiceAccount(metadata=_meta(uid, name, namespace))
-
-    return _make
-
-
-@pytest.fixture
-def make_crd():
-    def _make(uid, name, group="example.com", plural="widgets", kind="Widget", established="True"):
-        return k8s.V1CustomResourceDefinition(
-            metadata=_meta(uid, name, namespace=None),
-            spec=k8s.V1CustomResourceDefinitionSpec(
-                group=group,
-                scope="Namespaced",
-                names=k8s.V1CustomResourceDefinitionNames(kind=kind, plural=plural),
-                versions=[k8s.V1CustomResourceDefinitionVersion(name="v1", served=True, storage=True)],
-            ),
-            status=k8s.V1CustomResourceDefinitionStatus(
-                conditions=[k8s.V1CustomResourceDefinitionCondition(type="Established", status=established)]
             ),
         )
 

@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.k8s.client import KubeClientManager
-from krowser.k8s.custom_resources import get_custom_resource
 from krowser.k8s.getters import GETTERS_BY_KIND, get_pod_events, get_pod_logs
 from krowser.k8s.pod_describe import describe_pod
 
@@ -17,25 +16,16 @@ def get_resource_yaml(
     name: str,
     namespace: str | None = None,
     context: str | None = None,
-    group: str | None = None,
-    version: str | None = None,
-    plural: str | None = None,
     mgr: KubeClientManager = Depends(get_kube_client_manager),
 ):
     getter = GETTERS_BY_KIND.get(kind)
-    if getter is None and not (group and version and plural):
+    if getter is None:
         raise HTTPException(status_code=404, detail=f"unknown kind: {kind}")
 
     try:
-        if getter is not None:
-            obj = getter(mgr, context, namespace, name)
-            api_client = mgr.api_client_for(context)
-            sanitized = api_client.sanitize_for_serialization(obj)
-        else:
-            # A custom resource instance: no GETTERS_BY_KIND entry (Kind is
-            # arbitrary/dynamic), fetched via CustomObjectsApi instead, which
-            # already returns plain, already-serializable JSON.
-            sanitized = get_custom_resource(mgr, context, namespace, name, group, version, plural)
+        obj = getter(mgr, context, namespace, name)
+        api_client = mgr.api_client_for(context)
+        sanitized = api_client.sanitize_for_serialization(obj)
         yaml_text = yaml.safe_dump(sanitized, sort_keys=False, default_flow_style=False)
     except Exception as exc:
         raise to_http_exception(exc) from exc

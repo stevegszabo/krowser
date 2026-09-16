@@ -16,11 +16,8 @@ function resourceList() {
     // starts expanded since Pods is the default selection on load.
     expandedGroups: ['Workloads'],
 
-    // One level of top-level groups, each holding an ordered list of "rows":
-    // either a plain resource-type item, or a nested sub-group (its own
-    // collapsible sub-header with its own items, e.g. Cluster's "Cluster
-    // Roles"). Consecutive entries sharing a `subgroup` collapse into one
-    // sub-group row, same as top-level `group` already does.
+    // One level of top-level groups, each holding an ordered list of "rows",
+    // one per resource-type item.
     get groupedTypes() {
       const types = this.$store.app.resourceTypes;
       const groups = [];
@@ -30,16 +27,7 @@ function resourceList() {
           currentGroup = { group: rt.group, rows: [] };
           groups.push(currentGroup);
         }
-        if (rt.subgroup) {
-          const lastRow = currentGroup.rows[currentGroup.rows.length - 1];
-          if (lastRow && lastRow.subgroup === rt.subgroup) {
-            lastRow.items.push(rt);
-          } else {
-            currentGroup.rows.push({ subgroup: rt.subgroup, items: [rt] });
-          }
-        } else {
-          currentGroup.rows.push({ item: rt });
-        }
+        currentGroup.rows.push({ item: rt });
       }
       return groups;
     },

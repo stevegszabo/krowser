@@ -110,9 +110,6 @@ document.addEventListener('alpine:init', () => {
       store.detailResource = null;
       try {
         await this.loadNamespaces();
-        // Different clusters/contexts have different CRDs installed, so the
-        // "Custom Resources" group has to be re-fetched on every switch, not
-        // just once at startup.
         const typesRes = await api.getResourceTypes(store.context);
         store.resourceTypes = typesRes.resource_types;
         if (!store.resourceTypes.some((rt) => rt.id === store.selectedType)) {

@@ -262,38 +262,6 @@ def _describe_node(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     return health, status_label, None, badges
 
 
-def _describe_service_account(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
-    # No status/condition concept -- "unknown" health matches the existing
-    # ConfigMap/Secret precedent.
-    pull_secret_count = len(obj.image_pull_secrets or [])
-    if pull_secret_count:
-        status_label = f"{pull_secret_count} image pull secret{'s' if pull_secret_count != 1 else ''}"
-        return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
-    return "unknown", "ServiceAccount", None, []
-
-
-def _describe_cluster_role(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
-    # RBAC policy objects carry no status/condition concept -- "unknown"
-    # health matches the existing ConfigMap/Secret precedent.
-    rule_count = len(obj.rules or [])
-    status_label = f"{rule_count} rule{'s' if rule_count != 1 else ''}"
-    return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
-
-
-def _describe_cluster_role_binding(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
-    subject_count = len(obj.subjects or [])
-    status_label = f"{subject_count} subject{'s' if subject_count != 1 else ''}"
-    return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
-
-
-def _describe_custom_resource(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
-    # Custom resource schemas are arbitrary and unknown to krowser -- unlike
-    # every other describer here, there's no well-known status shape to read,
-    # so this deliberately reports the same "unknown" health as ConfigMap/
-    # Secret rather than guessing at conventions that don't universally hold.
-    return "unknown", "Unknown", None, []
-
-
 _DESCRIBERS = {
     "Pod": _describe_pod,
     "Deployment": lambda obj: _describe_replica_style(obj, "ready_replicas"),
@@ -308,11 +276,8 @@ _DESCRIBERS = {
     "PersistentVolume": _describe_pv,
     "ConfigMap": _describe_config_map,
     "Secret": _describe_secret,
-    "ServiceAccount": _describe_service_account,
     "EndpointSlice": _describe_endpoint_slice,
     "Node": _describe_node,
-    "ClusterRole": _describe_cluster_role,
-    "ClusterRoleBinding": _describe_cluster_role_binding,
 }
 
 
@@ -321,18 +286,8 @@ def build_node(
     kind: str,
     icon: str,
     is_root: bool,
-    *,
-    api_group: str | None = None,
-    api_version: str | None = None,
-    plural: str | None = None,
 ) -> GraphNode:
-    # Any kind not in _DESCRIBERS is a custom resource instance (an
-    # arbitrary Kind from a CRD, discovered dynamically -- see
-    # krowser.k8s.resource_types.get_all_resource_types), never a bug: every
-    # built-in Kind krowser fetches has a registered describer.
-    describer = _DESCRIBERS.get(kind, _describe_custom_resource)
-
-    health, status_label, ready, extra_badges = describer(obj)
+    health, status_label, ready, extra_badges = _DESCRIBERS[kind](obj)
     age_badge, age, age_seconds = _age_badge(obj)
     # Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry a
     # real ownerReference back to their Node -- flag them so the frontend can
@@ -363,7 +318,4 @@ def build_node(
         is_root=is_root,
         is_static=is_static,
         containers=containers,
-        api_group=api_group,
-        api_version=api_version,
-        plural=plural,
     )

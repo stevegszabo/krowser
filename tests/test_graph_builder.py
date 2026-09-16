@@ -1,11 +1,7 @@
-from datetime import datetime, timezone
-from types import SimpleNamespace
-
 from kubernetes import client as k8s
 
 import krowser.graph.builder as builder_module
 from krowser.graph.builder import GraphBuilder
-from krowser.k8s.resource_types import ResourceTypeSpec
 
 
 # Every Kind the builder might look up across any resource-type view. Tests only
@@ -14,7 +10,7 @@ from krowser.k8s.resource_types import ResourceTypeSpec
 ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
-    "EndpointSlice", "Node", "ClusterRole", "ClusterRoleBinding", "ServiceAccount",
+    "EndpointSlice", "Node",
 ]
 
 
@@ -262,125 +258,6 @@ def test_node_graph_shows_single_edge_for_static_pod(monkeypatch, make_node, mak
     assert {(e.source, e.target, e.relation) for e in graph.edges} == {("node-1", "pod-1", "owns")}
     static_node = next(n for n in graph.nodes if n.id == "pod-1")
     assert static_node.is_static is True
-
-
-def test_clusterrole_instance_graph_includes_only_its_own_bindings(
-    monkeypatch, make_cluster_role, make_cluster_role_binding
-):
-    # ClusterRoles are a dynamic per-instance type (see
-    # krowser.k8s.resource_types.get_all_resource_types): selecting one
-    # fetches just that named role via GETTERS_BY_KIND, not every role via
-    # FETCHERS_BY_KIND -- so get_resource_type() and GETTERS_BY_KIND are
-    # patched directly here rather than going through _patch_fetchers.
-    role = make_cluster_role("role-1", "view")
-    bound_binding = make_cluster_role_binding("crb-1", "view-binding", role_name="view")
-    unrelated_binding = make_cluster_role_binding("crb-2", "other-binding", role_name="other-role")
-
-    rt = ResourceTypeSpec(
-        id="clusterrole/view", label="view", group="Cluster", icon="clusterrole",
-        namespaced=False, kind="ClusterRole", instance_name="view",
-    )
-    monkeypatch.setattr(builder_module, "get_resource_type", lambda type_id, mgr, context: rt)
-    monkeypatch.setattr(
-        builder_module, "GETTERS_BY_KIND", {"ClusterRole": lambda mgr, context, namespace, name: role}
-    )
-    _patch_fetchers(monkeypatch, {"ClusterRoleBinding": [bound_binding, unrelated_binding]})
-
-    graph = GraphBuilder(mgr=None).build("clusterrole/view", namespace=None, context=None)
-
-    node_ids = {n.id for n in graph.nodes}
-    assert node_ids == {"role-1", "crb-1"}
-    assert "crb-2" not in node_ids
-    assert {(e.source, e.target, e.relation) for e in graph.edges} == {("crb-1", "role-1", "binds")}
-
-
-def test_clusterrole_instance_graph_includes_bound_serviceaccount_and_its_pod(
-    monkeypatch, make_cluster_role, make_cluster_role_binding, make_service_account, make_pod
-):
-    role = make_cluster_role("role-1", "view")
-    bound_sa = make_service_account("sa-1", "my-sa", namespace="ns")
-    unrelated_sa = make_service_account("sa-2", "other-sa", namespace="ns")
-    bound_binding = make_cluster_role_binding(
-        "crb-1", "view-binding", role_name="view",
-        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="my-sa", namespace="ns")],
-    )
-    pod_using_sa = make_pod("pod-1", "my-pod", namespace="ns", service_account_name="my-sa")
-    pod_using_unrelated_sa = make_pod("pod-2", "other-pod", namespace="ns", service_account_name="other-sa")
-
-    rt = ResourceTypeSpec(
-        id="clusterrole/view", label="view", group="Cluster", icon="clusterrole",
-        namespaced=False, kind="ClusterRole", instance_name="view",
-    )
-    monkeypatch.setattr(builder_module, "get_resource_type", lambda type_id, mgr, context: rt)
-    monkeypatch.setattr(
-        builder_module, "GETTERS_BY_KIND", {"ClusterRole": lambda mgr, context, namespace, name: role}
-    )
-    _patch_fetchers(
-        monkeypatch,
-        {
-            "ClusterRoleBinding": [bound_binding],
-            "ServiceAccount": [bound_sa, unrelated_sa],
-            "Pod": [pod_using_sa, pod_using_unrelated_sa],
-        },
-    )
-
-    graph = GraphBuilder(mgr=None).build("clusterrole/view", namespace=None, context=None)
-
-    node_ids = {n.id for n in graph.nodes}
-    assert node_ids == {"role-1", "crb-1", "sa-1", "pod-1"}
-    assert "sa-2" not in node_ids
-    assert "pod-2" not in node_ids
-
-    relations = {(e.source, e.target, e.relation) for e in graph.edges}
-    assert ("crb-1", "role-1", "binds") in relations
-    assert ("crb-1", "sa-1", "binds") in relations
-    assert ("pod-1", "sa-1", "runs-as") in relations
-
-
-def _make_custom_resource(uid, name, namespace="ns"):
-    return SimpleNamespace(
-        metadata=SimpleNamespace(
-            uid=uid, name=name, namespace=namespace, owner_references=None,
-            creation_timestamp=datetime.now(timezone.utc),
-        )
-    )
-
-
-def test_custom_resource_instances_have_no_edges(monkeypatch):
-    # Dynamic custom-resource types have no FETCHERS_BY_KIND/GRAPH_EXPANSIONS
-    # entry (their id/Kind isn't known statically) -- build() instead
-    # resolves the type via get_resource_type() and fetches instances via
-    # list_custom_resources(), both patched here.
-    rt = ResourceTypeSpec(
-        id="customresources/widgets.example.com",
-        label="widgets.example.com",
-        group="Custom Resources",
-        icon="crd",
-        namespaced=True,
-        kind="Widget",
-        api_group="example.com",
-        version="v1",
-        plural="widgets",
-    )
-    monkeypatch.setattr(builder_module, "get_resource_type", lambda type_id, mgr, context: rt)
-
-    widgets = [_make_custom_resource("w-1", "a"), _make_custom_resource("w-2", "b")]
-    monkeypatch.setattr(
-        builder_module,
-        "list_custom_resources",
-        lambda mgr, context, namespace, group, version, plural: widgets,
-    )
-
-    graph = GraphBuilder(mgr=None).build("customresources/widgets.example.com", namespace="ns", context=None)
-
-    assert {n.id for n in graph.nodes} == {"w-1", "w-2"}
-    assert graph.edges == []
-    node = next(n for n in graph.nodes if n.id == "w-1")
-    assert node.kind == "Widget"
-    assert node.icon == "crd"
-    assert node.api_group == "example.com"
-    assert node.api_version == "v1"
-    assert node.plural == "widgets"
 
 
 def test_persistent_volumes_filtered_to_namespace_bound_claim(monkeypatch, make_pv):

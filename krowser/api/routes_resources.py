@@ -16,7 +16,7 @@ def get_resource_types(
     mgr: KubeClientManager = Depends(get_kube_client_manager),
 ):
     try:
-        resource_types = get_all_resource_types(mgr, context)
+        resource_types = get_all_resource_types()
     except Exception as exc:
         raise to_http_exception(exc) from exc
 
@@ -26,7 +26,6 @@ def get_resource_types(
                 "id": rt.id,
                 "label": rt.label,
                 "group": rt.group,
-                "subgroup": rt.subgroup,
                 "icon": rt.icon,
                 "namespaced": rt.namespaced,
             }
@@ -43,7 +42,7 @@ def get_resources(
     mgr: KubeClientManager = Depends(get_kube_client_manager),
 ):
     try:
-        rt = get_resource_type(type, mgr, context)
+        rt = get_resource_type(type)
     except UnknownResourceTypeError:
         raise HTTPException(status_code=404, detail=f"unknown resource type: {type}")
 

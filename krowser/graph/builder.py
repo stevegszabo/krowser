@@ -1,13 +1,11 @@
 from typing import Any
 
 from krowser.config import settings
-from krowser.graph.expansions import DEFAULT_EXPANSION_BY_KIND, GRAPH_EXPANSIONS, GraphExpansion
+from krowser.graph.expansions import GRAPH_EXPANSIONS, GraphExpansion
 from krowser.graph.models import Graph, GraphEdge, GraphNode
 from krowser.graph.relationships import build_edges
 from krowser.k8s.client import KubeClientManager
-from krowser.k8s.custom_resources import list_custom_resources
 from krowser.k8s.fetchers import FETCHERS_BY_KIND
-from krowser.k8s.getters import GETTERS_BY_KIND
 from krowser.k8s.resource_types import ICONS_BY_KIND, ResourceTypeSpec, get_resource_type
 from krowser.k8s.status import build_node
 
@@ -20,17 +18,6 @@ def fetch_root(
         # to PVs bound to a PVC in that namespace rather than ignoring the filter.
         pvs = FETCHERS_BY_KIND["PersistentVolume"](mgr, context, None)
         return [pv for pv in pvs if pv.spec.claim_ref and pv.spec.claim_ref.namespace == namespace]
-    if rt.instance_name is not None:
-        # A dynamic per-instance type (e.g. one specific ClusterRole): fetch
-        # just this one named object rather than listing every object of the
-        # kind.
-        return [GETTERS_BY_KIND[rt.kind](mgr, context, None, rt.instance_name)]
-    if rt.api_group is not None:
-        # A dynamic custom-resource type: no FETCHERS_BY_KIND entry (Kind is
-        # arbitrary), fetched generically via CustomObjectsApi instead. A
-        # cluster-scoped CR ignores the namespace filter, same as Node/PV.
-        ns = namespace if rt.namespaced else None
-        return list_custom_resources(mgr, context, ns, rt.api_group, rt.version, rt.plural)
     return FETCHERS_BY_KIND[rt.kind](mgr, context, namespace)
 
 
@@ -67,12 +54,8 @@ class GraphBuilder:
         self._mgr = mgr
 
     def build(self, type_id: str, namespace: str | None, context: str | None) -> Graph:
-        rt = get_resource_type(type_id, self._mgr, context)
-        # Dynamic types (custom resources, per-instance ClusterRoles) have no
-        # GRAPH_EXPANSIONS entry (their id isn't known statically); fall back
-        # to a per-Kind default (e.g. ClusterRole -> ClusterRoleBinding), or
-        # no related kinds at all (e.g. an arbitrary CRD, same as ConfigMaps).
-        expansion = GRAPH_EXPANSIONS.get(type_id) or DEFAULT_EXPANSION_BY_KIND.get(rt.kind, GraphExpansion(()))
+        rt = get_resource_type(type_id)
+        expansion = GRAPH_EXPANSIONS.get(type_id, GraphExpansion(()))
 
         root_objects = fetch_root(self._mgr, context, namespace, type_id, rt)
         resource_count = len(root_objects)
@@ -91,25 +74,9 @@ class GraphBuilder:
 
         all_nodes: list[GraphNode] = []
         for kind, objs in world.items():
-            # A dynamic custom-resource Kind has no ICONS_BY_KIND entry
-            # (Kind is arbitrary); fall back to the resource type's own icon
-            # ("crd") for its own root objects, and the generic default icon
-            # for anything else (unreachable today: CR expansions are always
-            # empty, but kept for safety if that ever changes).
-            icon = ICONS_BY_KIND.get(kind, rt.icon if kind == rt.kind else "default")
-            is_cr_root = kind == rt.kind and rt.api_group is not None
+            icon = ICONS_BY_KIND.get(kind, "default")
             for obj in objs:
-                all_nodes.append(
-                    build_node(
-                        obj,
-                        kind,
-                        icon,
-                        obj.metadata.uid in root_uids,
-                        api_group=rt.api_group if is_cr_root else None,
-                        api_version=rt.version if is_cr_root else None,
-                        plural=rt.plural if is_cr_root else None,
-                    )
-                )
+                all_nodes.append(build_node(obj, kind, icon, obj.metadata.uid in root_uids))
 
         all_edges = build_edges(world)
 

@@ -7,7 +7,6 @@ const RELATION_LABEL = {
   exposes: 'exposes',
   targets: 'targets',
   'runs-on': 'runs on',
-  'runs-as': 'runs as',
 };
 
 function sameIdSet(elements, ids) {
@@ -122,9 +121,6 @@ function graphView() {
             namespace: data.namespace,
             name: data.name,
             containers,
-            api_group: data.api_group,
-            api_version: data.api_version,
-            plural: data.plural,
           },
         };
       });
