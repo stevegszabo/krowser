@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from kubernetes import client as k8s
 
+from krowser.k8s.metrics import Usage
 from krowser.k8s.status import build_node
 
 
@@ -15,6 +18,26 @@ def test_pod_crashloop_overrides_running_phase_as_degraded(make_pod):
     assert node.health == "degraded"
     assert node.status_label == "CrashLoopBackOff"
     assert node.ready == "0/1"
+
+
+def test_pod_shows_usage_badge_when_metrics_available(make_pod):
+    pod = make_pod("pod-1", "app", namespace="ns")
+    pod_metrics = {("ns", "app"): Usage(cpu_cores=Decimal("0.12"), memory_bytes=Decimal(340 * 1024**2))}
+
+    node = build_node(pod, "Pod", "pod", is_root=True, pod_metrics=pod_metrics)
+
+    assert any(b.variant == "metrics" and b.text == "120m / 340Mi" for b in node.badges)
+
+
+def test_pod_has_no_usage_badge_when_metrics_unavailable(make_pod):
+    pod = make_pod("pod-1", "app", namespace="ns")
+
+    node = build_node(pod, "Pod", "pod", is_root=True)
+
+    assert not any(b.variant == "metrics" for b in node.badges)
+
+    node_with_empty_metrics = build_node(pod, "Pod", "pod", is_root=True, pod_metrics={})
+    assert not any(b.variant == "metrics" for b in node_with_empty_metrics.badges)
 
 
 def test_deployment_scaled_to_zero_is_suspended(make_deployment):
@@ -64,6 +87,32 @@ def test_node_condition_health_mapping(make_node):
         "suspended",
     )
     assert (ready.status_label, cordoned.status_label) == ("Ready", "Cordoned")
+
+
+def test_node_shows_usage_badge_with_percentage_of_allocatable(make_node):
+    node_obj = make_node("n1", "worker-1", ready="True", allocatable={"cpu": "8", "memory": "8192Mi"})
+    node_metrics = {"worker-1": Usage(cpu_cores=Decimal("1.5"), memory_bytes=Decimal(2048 * 1024**2))}
+
+    node = build_node(node_obj, "Node", "node", True, node_metrics=node_metrics)
+
+    assert any(b.variant == "metrics" and b.text == "1500m (18%) / 2048Mi (25%)" for b in node.badges)
+
+
+def test_node_shows_usage_badge_without_percentage_when_allocatable_missing(make_node):
+    node_obj = make_node("n1", "worker-1", ready="True")
+    node_metrics = {"worker-1": Usage(cpu_cores=Decimal("1.5"), memory_bytes=Decimal(2048 * 1024**2))}
+
+    node = build_node(node_obj, "Node", "node", True, node_metrics=node_metrics)
+
+    assert any(b.variant == "metrics" and b.text == "1500m / 2048Mi" for b in node.badges)
+
+
+def test_node_has_no_usage_badge_when_metrics_unavailable(make_node):
+    node_obj = make_node("n1", "worker-1", ready="True")
+
+    node = build_node(node_obj, "Node", "node", True)
+
+    assert not any(b.variant == "metrics" for b in node.badges)
 
 
 def test_static_pod_flagged_is_static(make_pod):

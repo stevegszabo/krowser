@@ -441,6 +441,7 @@ html, body {
   white-space: nowrap;
 }
 .krw-badge-status { background: #e8f0fd; color: var(--teal-dark); }
+.krw-badge-metrics { background: #f3ecfd; color: #6b3fa0; }
 
 /* Resource detail pane */
 .krw-detail-pane {

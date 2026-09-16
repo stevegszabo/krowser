@@ -13,6 +13,7 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 - Collapse/expand each left-pane group (CLUSTER, CONFIG, NETWORK, STORAGE, WORKLOADS) independently
 - Filter by namespace (or view all namespaces at once) and by kubeconfig context
 - Relationship graph derived from real cluster state: owner references (e.g. Deployment→ReplicaSet→Pod), Service↔Pod label-selector matching, Ingress routing, PersistentVolumeClaim/PersistentVolume binding, ConfigMap/Secret usage (volume mounts, `envFrom`, individual env vars), and Service→EndpointSlice→Pod (shown on the Ingresses and Services views)
+- Node and Pod tiles show live CPU/memory usage when the cluster has metrics-server installed, fetched from the Metrics API — Node tiles also show each value as a percentage of the node's allocatable capacity (e.g. `768m (4%) / 13147Mi (41%)`), matching `kubectl top node`'s own columns; Pod tiles show plain usage only (e.g. `50m / 1687Mi`), matching `kubectl top pod`
 - Right-click any node for a context menu of actions, opening a resizable detail pane:
   - **Get \<kind\>** — the resource's full YAML, fetched fresh from the cluster
   - **Get pod description** (Pods only) — a `kubectl describe`-style summary (containers, conditions, volumes, and recent Events), built entirely via the Kubernetes API

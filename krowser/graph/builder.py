@@ -6,6 +6,7 @@ from krowser.graph.models import Graph, GraphEdge, GraphNode
 from krowser.graph.relationships import build_edges
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.fetchers import FETCHERS_BY_KIND
+from krowser.k8s.metrics import fetch_node_metrics, fetch_pod_metrics
 from krowser.k8s.resource_types import ICONS_BY_KIND, ResourceTypeSpec, get_resource_type
 from krowser.k8s.status import build_node
 
@@ -72,11 +73,25 @@ class GraphBuilder:
 
         root_uids = {obj.metadata.uid for obj in root_objects}
 
+        # Best-effort usage overlay from the cluster's metrics-server, fetched
+        # once per build and only when the graph actually contains that kind.
+        node_metrics = fetch_node_metrics(self._mgr, context) if "Node" in world else None
+        pod_metrics = fetch_pod_metrics(self._mgr, context, namespace) if "Pod" in world else None
+
         all_nodes: list[GraphNode] = []
         for kind, objs in world.items():
             icon = ICONS_BY_KIND.get(kind, "default")
             for obj in objs:
-                all_nodes.append(build_node(obj, kind, icon, obj.metadata.uid in root_uids))
+                all_nodes.append(
+                    build_node(
+                        obj,
+                        kind,
+                        icon,
+                        obj.metadata.uid in root_uids,
+                        node_metrics=node_metrics,
+                        pod_metrics=pod_metrics,
+                    )
+                )
 
         all_edges = build_edges(world)
 

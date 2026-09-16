@@ -86,6 +86,12 @@ class KubeClientManager:
     def discovery_v1(self, context: str | None) -> k8s_client.DiscoveryV1Api:
         return k8s_client.DiscoveryV1Api(self.api_client_for(context))
 
+    # Scoped specifically to krowser.k8s.metrics (the metrics.k8s.io Metrics
+    # API has no dedicated typed client) -- not a reintroduction of the
+    # general CRD-browsing surface that was deliberately removed.
+    def custom_objects_api(self, context: str | None) -> k8s_client.CustomObjectsApi:
+        return k8s_client.CustomObjectsApi(self.api_client_for(context))
+
     def list_namespaces(self, context: str | None) -> list[str]:
         namespaces = self.core_v1(context).list_namespace()
         return sorted(ns.metadata.name for ns in namespaces.items)

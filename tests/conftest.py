@@ -166,12 +166,13 @@ def make_pv():
 
 @pytest.fixture
 def make_node():
-    def _make(uid, name, ready="True", unschedulable=False, kubelet_version="v1.30.0"):
+    def _make(uid, name, ready="True", unschedulable=False, kubelet_version="v1.30.0", allocatable=None):
         return k8s.V1Node(
             metadata=_meta(uid, name, namespace=None),
             spec=k8s.V1NodeSpec(unschedulable=unschedulable),
             status=k8s.V1NodeStatus(
                 conditions=[k8s.V1NodeCondition(type="Ready", status=ready)],
+                allocatable=allocatable,
                 node_info=k8s.V1NodeSystemInfo(
                     kubelet_version=kubelet_version,
                     architecture="amd64",

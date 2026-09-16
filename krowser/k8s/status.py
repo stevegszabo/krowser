@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 from typing import Any
 
+from kubernetes.utils.quantity import parse_quantity
+
 from krowser.graph.models import Badge, GraphNode, Health
+from krowser.k8s.metrics import Usage, format_node_usage, format_usage
 
 
 def humanize_age(creation_timestamp: datetime | None) -> tuple[str, int]:
@@ -30,7 +33,9 @@ def _age_badge(obj: Any) -> tuple[Badge, str, int]:
     return Badge(text=age, variant="age"), age, age_seconds
 
 
-def _describe_pod(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+def _describe_pod(
+    obj: Any, pod_metrics: dict[tuple[str, str], Usage] | None = None
+) -> tuple[Health, str, str | None, list[Badge]]:
     phase = obj.status.phase or "Unknown"
     container_statuses = obj.status.container_statuses or []
     total = len(container_statuses) or len(obj.spec.containers or [])
@@ -61,6 +66,9 @@ def _describe_pod(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
         Badge(text=status_label, variant="status"),
         *([Badge(text=ready, variant="ready")] if ready else []),
     ]
+    usage = (pod_metrics or {}).get((obj.metadata.namespace, obj.metadata.name))
+    if usage:
+        badges.append(Badge(text=format_usage(usage), variant="metrics"))
     return health, status_label, ready, badges
 
 
@@ -240,7 +248,25 @@ def _describe_endpoint_slice(obj: Any) -> tuple[Health, str, str | None, list[Ba
     return health, status_label, ready, [Badge(text=status_label, variant="ready")]
 
 
-def _describe_node(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+def _format_node_usage(obj: Any, usage: Usage) -> str:
+    # Percentages need the node's own allocatable capacity, which lives on
+    # the Node object itself (no extra fetch) -- fall back to plain usage if
+    # it's ever missing rather than showing a bogus 0%/division error.
+    allocatable = obj.status.allocatable or {}
+    if "cpu" not in allocatable or "memory" not in allocatable:
+        return format_usage(usage)
+    return format_node_usage(
+        usage,
+        Usage(
+            cpu_cores=parse_quantity(allocatable["cpu"]),
+            memory_bytes=parse_quantity(allocatable["memory"]),
+        ),
+    )
+
+
+def _describe_node(
+    obj: Any, node_metrics: dict[str, Usage] | None = None
+) -> tuple[Health, str, str | None, list[Badge]]:
     conditions = obj.status.conditions or []
     ready_cond = next((c for c in conditions if c.type == "Ready"), None)
     unschedulable = bool(obj.spec.unschedulable)
@@ -259,11 +285,13 @@ def _describe_node(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     node_info = obj.status.node_info
     if node_info and node_info.kubelet_version:
         badges.append(Badge(text=node_info.kubelet_version, variant="misc"))
+    usage = (node_metrics or {}).get(obj.metadata.name)
+    if usage:
+        badges.append(Badge(text=_format_node_usage(obj, usage), variant="metrics"))
     return health, status_label, None, badges
 
 
 _DESCRIBERS = {
-    "Pod": _describe_pod,
     "Deployment": lambda obj: _describe_replica_style(obj, "ready_replicas"),
     "StatefulSet": lambda obj: _describe_replica_style(obj, "ready_replicas"),
     "ReplicaSet": lambda obj: _describe_replica_style(obj, "ready_replicas"),
@@ -277,7 +305,6 @@ _DESCRIBERS = {
     "ConfigMap": _describe_config_map,
     "Secret": _describe_secret,
     "EndpointSlice": _describe_endpoint_slice,
-    "Node": _describe_node,
 }
 
 
@@ -286,8 +313,19 @@ def build_node(
     kind: str,
     icon: str,
     is_root: bool,
+    *,
+    node_metrics: dict[str, Usage] | None = None,
+    pod_metrics: dict[tuple[str, str], Usage] | None = None,
 ) -> GraphNode:
-    health, status_label, ready, extra_badges = _DESCRIBERS[kind](obj)
+    # Node and Pod take extra (metrics) arguments the other describers don't,
+    # so they're special-cased here rather than threading an unused param
+    # through every entry in _DESCRIBERS.
+    if kind == "Node":
+        health, status_label, ready, extra_badges = _describe_node(obj, node_metrics)
+    elif kind == "Pod":
+        health, status_label, ready, extra_badges = _describe_pod(obj, pod_metrics)
+    else:
+        health, status_label, ready, extra_badges = _DESCRIBERS[kind](obj)
     age_badge, age, age_seconds = _age_badge(obj)
     # Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry a
     # real ownerReference back to their Node -- flag them so the frontend can

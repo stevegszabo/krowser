@@ -1,7 +1,10 @@
+from decimal import Decimal
+
 from kubernetes import client as k8s
 
 import krowser.graph.builder as builder_module
 from krowser.graph.builder import GraphBuilder
+from krowser.k8s.metrics import Usage
 
 
 # Every Kind the builder might look up across any resource-type view. Tests only
@@ -258,6 +261,31 @@ def test_node_graph_shows_single_edge_for_static_pod(monkeypatch, make_node, mak
     assert {(e.source, e.target, e.relation) for e in graph.edges} == {("node-1", "pod-1", "owns")}
     static_node = next(n for n in graph.nodes if n.id == "pod-1")
     assert static_node.is_static is True
+
+
+def test_node_and_pod_tiles_include_usage_badge_from_metrics(monkeypatch, make_node, make_pod):
+    node_obj = make_node("node-1", "worker-1")
+    pod_obj = make_pod("pod-1", "web-a", namespace="ns", node_name="worker-1")
+    _patch_fetchers(monkeypatch, {"Node": [node_obj], "Pod": [pod_obj]})
+    monkeypatch.setattr(
+        builder_module,
+        "fetch_node_metrics",
+        lambda mgr, context: {"worker-1": Usage(cpu_cores=Decimal("1.5"), memory_bytes=Decimal(2048 * 1024**2))},
+    )
+    monkeypatch.setattr(
+        builder_module,
+        "fetch_pod_metrics",
+        lambda mgr, context, namespace: {
+            ("ns", "web-a"): Usage(cpu_cores=Decimal("0.12"), memory_bytes=Decimal(340 * 1024**2))
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("cluster/nodes", namespace="ns", context=None)
+
+    node_tile = next(n for n in graph.nodes if n.id == "node-1")
+    pod_tile = next(n for n in graph.nodes if n.id == "pod-1")
+    assert any(b.variant == "metrics" and b.text == "1500m / 2048Mi" for b in node_tile.badges)
+    assert any(b.variant == "metrics" and b.text == "120m / 340Mi" for b in pod_tile.badges)
 
 
 def test_persistent_volumes_filtered_to_namespace_bound_claim(monkeypatch, make_pv):
