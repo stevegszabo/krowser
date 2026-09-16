@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from kubernetes import client as k8s
 from kubernetes.client import ApiClient
 
 import krowser.api.routes_resource as routes_resource_module
@@ -7,6 +8,7 @@ from krowser.api.deps import get_kube_client_manager
 from krowser.k8s.client import ContextInfo
 from krowser.k8s.fetchers import ResourceAccessError
 from krowser.main import app
+from krowser.vuln_scan import ScanFailedError, ScannerUnavailableError
 
 
 class FakeManager:
@@ -184,3 +186,98 @@ def test_pod_logs_maps_resource_access_error(client, monkeypatch):
     res = client.get("/api/pod-logs", params={"name": "x", "namespace": "ns", "container": "app"})
 
     assert res.status_code == 404
+
+
+def test_pod_vulnscan_resolves_image_by_container_name(client, monkeypatch, make_pod):
+    pod = make_pod("pod-1", "web-abc", namespace="ns")
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+    captured = {}
+
+    def fake_scan_image(image):
+        captured["image"] = image
+        return {"image": image, "summary": {}, "findings": []}
+
+    monkeypatch.setattr(routes_resource_module, "scan_image", fake_scan_image)
+
+    res = client.get(
+        "/api/pod-vulnscan", params={"name": "web-abc", "namespace": "ns", "container": "app"}
+    )
+
+    assert res.status_code == 200
+    assert captured["image"] == "nginx"
+    assert res.json() == {"image": "nginx", "summary": {}, "findings": []}
+
+
+def test_pod_vulnscan_resolves_image_from_init_container(client, monkeypatch, make_pod):
+    pod = make_pod(
+        "pod-1", "web-abc", namespace="ns",
+        init_containers=[k8s.V1Container(name="init-setup", image="busybox:1.36")],
+    )
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+    captured = {}
+
+    def fake_scan_image(image):
+        captured["image"] = image
+        return {"image": image, "summary": {}, "findings": []}
+
+    monkeypatch.setattr(routes_resource_module, "scan_image", fake_scan_image)
+
+    res = client.get(
+        "/api/pod-vulnscan", params={"name": "web-abc", "namespace": "ns", "container": "init-setup"}
+    )
+
+    assert res.status_code == 200
+    assert captured["image"] == "busybox:1.36"
+
+
+def test_pod_vulnscan_unknown_container_is_404(client, monkeypatch, make_pod):
+    pod = make_pod("pod-1", "web-abc", namespace="ns")
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+
+    res = client.get(
+        "/api/pod-vulnscan", params={"name": "web-abc", "namespace": "ns", "container": "bogus"}
+    )
+
+    assert res.status_code == 404
+
+
+def test_pod_vulnscan_maps_scanner_unavailable_to_503(client, monkeypatch, make_pod):
+    pod = make_pod("pod-1", "web-abc", namespace="ns")
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+
+    def _raise(image):
+        raise ScannerUnavailableError("trivy not found on PATH")
+
+    monkeypatch.setattr(routes_resource_module, "scan_image", _raise)
+
+    res = client.get(
+        "/api/pod-vulnscan", params={"name": "web-abc", "namespace": "ns", "container": "app"}
+    )
+
+    assert res.status_code == 503
+
+
+def test_pod_vulnscan_maps_scan_failed_to_502(client, monkeypatch, make_pod):
+    pod = make_pod("pod-1", "web-abc", namespace="ns")
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+
+    def _raise(image):
+        raise ScanFailedError("scan timed out")
+
+    monkeypatch.setattr(routes_resource_module, "scan_image", _raise)
+
+    res = client.get(
+        "/api/pod-vulnscan", params={"name": "web-abc", "namespace": "ns", "container": "app"}
+    )
+
+    assert res.status_code == 502

@@ -41,6 +41,7 @@ function resourcePanel() {
     execStarted: false,
     execExitInfo: '',
     execFailed: false,
+    scanResults: null,
     viewMode: 'yaml',
     loading: false,
     error: null,
@@ -48,6 +49,7 @@ function resourcePanel() {
     resizing: false,
     _lastResourceId: null,
     _lastExecKey: null,
+    _lastScanKey: null,
     _execSocket: null,
     _execTerm: null,
     _execFitAddon: null,
@@ -123,6 +125,7 @@ function resourcePanel() {
         this.logsText = '';
         this.logFilter = '';
         this.error = null;
+        this.scanResults = null;
         this.setLoading(false);
         this.resetExec();
         return;
@@ -148,6 +151,20 @@ function resourcePanel() {
         if (execKey !== this._lastExecKey) {
           this._lastExecKey = execKey;
           this.resetExec();
+        }
+        return;
+      }
+
+      if (this.viewMode === 'vulnscan') {
+        this.setLoading(false);
+        this.error = null;
+        // Scanning is user-triggered (see runScan) rather than auto-fetched
+        // like describe/logs -- only reset stale results when the pod or
+        // container actually changes, same key pattern as exec's session.
+        const scanKey = `${selected.id}::${selected.container}`;
+        if (scanKey !== this._lastScanKey) {
+          this._lastScanKey = scanKey;
+          this.scanResults = null;
         }
         return;
       }
@@ -211,6 +228,42 @@ function resourcePanel() {
     // any running session for the old container via resetExec().
     changeExecContainer(container) {
       this.$store.app.detailResource = { ...this.$store.app.detailResource, container };
+    },
+
+    // Same wholesale-replace pattern again. Switching containers here goes
+    // through load()'s scanKey check, which clears the previous container's
+    // stale results.
+    changeScanContainer(container) {
+      this.$store.app.detailResource = { ...this.$store.app.detailResource, container };
+    },
+
+    // User-triggered (not auto-fetched on load, unlike describe/logs) since a
+    // scan can take real time and bandwidth -- pulls the image, runs the
+    // scanner, and can take anywhere from a few seconds to a couple of
+    // minutes depending on image size and whether the scanner's own
+    // vulnerability DB needs refreshing.
+    async runScan() {
+      const selected = this.$store.app.detailResource;
+      if (!selected) return;
+      const requestId = ++this.requestSeq;
+      this.setLoading(true);
+      this.error = null;
+      try {
+        const res = await api.getPodVulnScan({
+          namespace: selected.namespace,
+          name: selected.name,
+          container: selected.container,
+          context: this.$store.app.context,
+        });
+        if (requestId !== this.requestSeq) return;
+        this.scanResults = res;
+      } catch (e) {
+        if (requestId !== this.requestSeq) return;
+        this.error = e.message;
+        this.scanResults = null;
+      } finally {
+        if (requestId === this.requestSeq) this.setLoading(false);
+      }
     },
 
     // Creates the xterm.js Terminal once per pod/container selection (see

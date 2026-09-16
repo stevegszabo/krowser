@@ -3,6 +3,7 @@ from kubernetes.client.rest import ApiException
 
 from krowser.k8s.client import KubeConfigError
 from krowser.k8s.fetchers import ResourceAccessError
+from krowser.vuln_scan import ScanFailedError, ScannerUnavailableError
 
 
 def to_http_exception(exc: Exception) -> HTTPException:
@@ -14,4 +15,8 @@ def to_http_exception(exc: Exception) -> HTTPException:
         return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, ApiException):
         return HTTPException(status_code=exc.status, detail=exc.reason or "Kubernetes API error")
+    if isinstance(exc, ScannerUnavailableError):
+        return HTTPException(status_code=503, detail=str(exc))
+    if isinstance(exc, ScanFailedError):
+        return HTTPException(status_code=502, detail=str(exc))
     return HTTPException(status_code=500, detail=str(exc))

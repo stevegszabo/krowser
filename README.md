@@ -19,13 +19,15 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
   - **Get pod description** (Pods only) — a `kubectl describe`-style summary (containers, conditions, volumes, and recent Events), built entirely via the Kubernetes API
   - **Get pod logs** (Pods only) — the last 100 log lines for the pod's first container, with a dropdown at the top of the pane to switch to any other container, plus a text filter that narrows to matching lines and highlights the matched text
   - **Execute command** (Pods only) — a `kubectl exec`-style terminal: pick a container from the dropdown, type a command (a one-shot command like `date`, or an interactive one like `sh`/`bash`), and press Run to stream it live in a real terminal (powered by xterm.js) over a WebSocket to the Kubernetes exec API, with full TTY resize support
+  - **Scan for vulnerabilities** (Pods only) — pick a container from the dropdown and press Scan to check its image for known CVEs via [Trivy](https://github.com/aquasecurity/trivy), showing severity counts and a findings list (CVE ID, package, installed/fixed version); requires `trivy` on `PATH` (see Configuration) and currently only works for publicly pullable images
 - Auto-refreshes on a polling interval without resetting your pan/zoom or losing your current selection unless the underlying resource set actually changes
-- Read-only with respect to cluster resources — no create/edit/delete/scale actions; the one exception is **Execute command**, which runs a process inside a pod's container exactly like `kubectl exec`
+- Read-only with respect to cluster resources — no create/edit/delete/scale actions; the exceptions are **Execute command**, which runs a process inside a pod's container exactly like `kubectl exec`, and **Scan for vulnerabilities**, which pulls the image being scanned
 
 ## Requirements
 
 - Python 3.11+
 - A working kubeconfig with access to the cluster you want to browse
+- [Trivy](https://github.com/aquasecurity/trivy) on `PATH`, only if you want to use **Scan for vulnerabilities** — every other feature works without it
 
 ## Quick start
 
@@ -46,6 +48,9 @@ Environment variables:
 |---|---|---|
 | `KUBECONFIG` | (system default, usually `~/.kube/config`) | Path to the kubeconfig file to load contexts from |
 | `KROWSER_MAX_GRAPH_NODES` | `150` | Caps the number of root nodes shown in a single graph (e.g. when viewing a resource type across all namespaces); the response reports the true count and flags when it's been truncated |
+| `KROWSER_VULNSCAN_TRIVY_PATH` | `trivy` | Path to (or name on `PATH` of) the Trivy binary used by **Scan for vulnerabilities** |
+| `KROWSER_VULNSCAN_TIMEOUT_SECONDS` | `180` | How long to let a single image scan run before giving up |
+| `KROWSER_VULNSCAN_CACHE_TTL_SECONDS` | `3600` | How long a scan result is cached per image, since many pods often share a base image |
 
 ## Development
 
@@ -65,6 +70,7 @@ pytest
 | `krowser/k8s/` | Kubernetes client wrapper, per-kind fetchers/getters, status/health logic |
 | `krowser/graph/` | Relationship-derivation and graph-building logic |
 | `krowser/api/` | HTTP routes |
+| `krowser/vuln_scan.py` | Container image CVE scanning via Trivy |
 | `static/index.html` | App shell |
 | `static/css/` | Styles |
 | `static/js/` | Alpine.js components + Cytoscape.js graph rendering (no build step) |

@@ -157,6 +157,11 @@
               x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
               @click="execFromContextMenu()"
             >Execute command</button>
+            <button
+              class="krw-context-menu-item"
+              x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
+              @click="scanFromContextMenu()"
+            >Scan for vulnerabilities</button>
           </div>
         </template>
       </main>
@@ -207,6 +212,20 @@
                   </select>
                 </span>
               </template>
+              <template x-if="viewMode === 'vulnscan'">
+                <span class="krw-detail-mode-group">
+                  <span class="krw-detail-mode">Scan:</span>
+                  <select
+                    class="krw-detail-container-select"
+                    :value="$store.app.detailResource.container"
+                    @change="changeScanContainer($event.target.value)"
+                  >
+                    <template x-for="c in ($store.app.detailResource.containers || [])" :key="c">
+                      <option :value="c" x-text="c"></option>
+                    </template>
+                  </select>
+                </span>
+              </template>
             </div>
             <button class="krw-detail-close" @click="close()" title="Close">&times;</button>
           </div>
@@ -242,6 +261,12 @@
               <span class="krw-exec-status" x-show="execExitInfo" x-text="execExitInfo"></span>
             </div>
           </template>
+          <template x-if="viewMode === 'vulnscan'">
+            <div class="krw-vulnscan-toolbar">
+              <button class="krw-exec-run-btn" @click="runScan()" :disabled="loading">Scan</button>
+              <span class="krw-exec-status" x-show="scanResults" x-text="'image: ' + (scanResults ? scanResults.image : '')"></span>
+            </div>
+          </template>
           <div class="krw-detail-body" :class="{ 'krw-detail-body-exec': viewMode === 'exec' }">
             <template x-if="loading">
               <div class="krw-detail-message">Loading&hellip;</div>
@@ -267,6 +292,39 @@
             </template>
             <template x-if="!loading && !error && viewMode === 'exec'">
               <div class="krw-exec-terminal" x-ref="execTerminal"></div>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'vulnscan'">
+              <div class="krw-vulnscan">
+                <template x-if="!scanResults">
+                  <div class="krw-detail-message">Click Scan to check this container's image for known vulnerabilities.</div>
+                </template>
+                <template x-if="scanResults && scanResults.findings.length === 0">
+                  <div class="krw-detail-message">No known vulnerabilities found.</div>
+                </template>
+                <template x-if="scanResults && scanResults.findings.length > 0">
+                  <div>
+                    <div class="krw-vulnscan-summary">
+                      <template x-for="sev in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']" :key="sev">
+                        <span
+                          class="krw-badge krw-vulnscan-pill"
+                          :class="'krw-badge-' + sev.toLowerCase()"
+                          x-show="scanResults.summary[sev] > 0"
+                        ><span x-text="scanResults.summary[sev]"></span>&nbsp;<span x-text="sev"></span></span>
+                      </template>
+                    </div>
+                    <div class="krw-vulnscan-list">
+                      <template x-for="finding in scanResults.findings" :key="finding.id + finding.package">
+                        <div class="krw-vulnscan-row">
+                          <span class="krw-badge krw-vulnscan-severity" :class="'krw-badge-' + finding.severity.toLowerCase()" x-text="finding.severity"></span>
+                          <span class="krw-vulnscan-id" x-text="finding.id"></span>
+                          <span class="krw-vulnscan-pkg" x-text="finding.package + ' ' + (finding.installed_version || '')"></span>
+                          <span class="krw-vulnscan-fixed" x-show="finding.fixed_version" x-text="'fixed in ' + finding.fixed_version"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
             </template>
           </div>
         </aside>

@@ -6,6 +6,7 @@ from krowser.api.errors import to_http_exception
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.getters import GETTERS_BY_KIND, get_pod_events, get_pod_logs
 from krowser.k8s.pod_describe import describe_pod
+from krowser.vuln_scan import scan_image
 
 router = APIRouter(prefix="/api", tags=["resource"])
 
@@ -64,3 +65,26 @@ def get_pod_logs_route(
         raise to_http_exception(exc) from exc
 
     return {"logs": logs}
+
+
+@router.get("/pod-vulnscan")
+def get_pod_vulnscan(
+    name: str,
+    namespace: str,
+    container: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    try:
+        pod = GETTERS_BY_KIND["Pod"](mgr, context, namespace, name)
+        all_containers = list(pod.spec.init_containers or []) + list(pod.spec.containers or [])
+        image = next((c.image for c in all_containers if c.name == container), None)
+        if image is None:
+            raise HTTPException(status_code=404, detail=f"unknown container: {container}")
+        result = scan_image(image)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return result

@@ -106,9 +106,10 @@ function graphView() {
         const data = this.hoveredNode.data();
         const containers = data.containers || [];
         // Clamp so the menu can't render past the right/bottom edge of the
-        // window. Pod nodes get three extra rows (Get pod logs, Get pod
-        // description, Execute command) beyond the universal "Get <kind>" row.
-        const itemCount = data.kind === 'Pod' ? 4 : 1;
+        // window. Pod nodes get four extra rows (Get pod logs, Get pod
+        // description, Execute command, Scan for vulnerabilities) beyond
+        // the universal "Get <kind>" row.
+        const itemCount = data.kind === 'Pod' ? 5 : 1;
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -321,6 +322,13 @@ function graphView() {
       const container = (this.contextMenu.resource.containers || [])[0];
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'exec', container };
+      this.contextMenu.visible = false;
+    },
+
+    scanFromContextMenu() {
+      const container = (this.contextMenu.resource.containers || [])[0];
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'vulnscan', container };
       this.contextMenu.visible = false;
     },
 

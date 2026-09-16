@@ -442,6 +442,11 @@ html, body {
 }
 .krw-badge-status { background: #e8f0fd; color: var(--teal-dark); }
 .krw-badge-metrics { background: #f3ecfd; color: #6b3fa0; }
+.krw-badge-critical { background: #fbe4e2; color: #b3261e; }
+.krw-badge-high { background: #fdecea; color: #c2410c; }
+.krw-badge-medium { background: #fff4e0; color: #92600a; }
+.krw-badge-low { background: #eef2f9; color: var(--ink-soft); }
+.krw-badge-unknown { background: #eef2f9; color: var(--ink-soft); }
 
 /* Resource detail pane */
 .krw-detail-pane {
@@ -610,6 +615,66 @@ html, body {
 
 .krw-exec-terminal {
   height: 100%;
+}
+
+.krw-vulnscan-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.krw-vulnscan {
+  padding: 14px;
+}
+
+.krw-vulnscan-summary {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.krw-vulnscan-pill {
+  font-weight: 600;
+}
+
+.krw-vulnscan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.krw-vulnscan-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+}
+
+.krw-vulnscan-severity {
+  flex-shrink: 0;
+}
+
+.krw-vulnscan-id {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.krw-vulnscan-pkg {
+  color: var(--ink-soft);
+}
+
+.krw-vulnscan-fixed {
+  font-size: 11px;
+  color: var(--healthy);
+  margin-left: auto;
 }
 
 .krw-detail-name {
