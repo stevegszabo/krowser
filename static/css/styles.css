@@ -29,6 +29,14 @@ html, body {
   height: 100vh;
 }
 
+/* Shows a busy (hourglass) cursor everywhere while a graph refresh or
+   detail-pane fetch is in flight, overriding any pointer/text cursor a
+   descendant element would otherwise show. */
+#app.krw-busy,
+#app.krw-busy * {
+  cursor: wait !important;
+}
+
 /* Top bar */
 .krw-topbar {
   display: flex;

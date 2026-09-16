@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <div id="app" x-data="appRoot()" x-init="init()" @select-type.window="onTypeSelect($event.detail)">
+  <div id="app" x-data="appRoot()" x-init="init()" @select-type.window="onTypeSelect($event.detail)" :class="{ 'krw-busy': $store.app.busy }">
 
     <header class="krw-topbar">
       <button

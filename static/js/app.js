@@ -40,9 +40,17 @@ document.addEventListener('alpine:init', () => {
     leftPaneVisible: loadStoredLeftPaneVisible(),
     leftPaneWidth: loadStoredLeftPaneWidth(),
     loading: false,
+    detailLoading: false,
     error: null,
     lastUpdated: null,
     pollMs: 10000,
+
+    // True while any in-flight request the user is waiting on (the main
+    // graph refresh or the detail pane's YAML/describe/logs fetch) hasn't
+    // resolved yet -- drives a global busy cursor, see index.html/styles.css.
+    get busy() {
+      return this.loading || this.detailLoading;
+    },
 
     // Namespace filtering only shrinks the result set for namespaced types
     // and the one cluster-scoped exception (PersistentVolume, which

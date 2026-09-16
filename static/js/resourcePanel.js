@@ -103,6 +103,14 @@ function resourcePanel() {
       document.addEventListener('mouseup', onMouseUp);
     },
 
+    // Mirrors into $store.app.detailLoading (alongside the local `loading`
+    // used by this pane's own "Loading..." message) so the global busy
+    // cursor (see app.js's $store.app.busy) also covers detail-pane fetches.
+    setLoading(value) {
+      this.loading = value;
+      this.$store.app.detailLoading = value;
+    },
+
     async load(selected) {
       // Guard against out-of-order responses if the user clicks between nodes
       // faster than a fetch resolves (same class of bug fixed in app.js's poll refresh).
@@ -115,6 +123,7 @@ function resourcePanel() {
         this.logsText = '';
         this.logFilter = '';
         this.error = null;
+        this.setLoading(false);
         this.resetExec();
         return;
       }
@@ -130,7 +139,7 @@ function resourcePanel() {
       this.viewMode = selected.view || 'yaml';
 
       if (this.viewMode === 'exec') {
-        this.loading = false;
+        this.setLoading(false);
         this.error = null;
         // A running/completed exec session is only torn down when the
         // pod or container actually changes -- switching back and forth
@@ -143,7 +152,7 @@ function resourcePanel() {
         return;
       }
 
-      this.loading = true;
+      this.setLoading(true);
       this.error = null;
       try {
         if (this.viewMode === 'describe') {
@@ -185,7 +194,7 @@ function resourcePanel() {
         this.describeSections = [];
         this.logsText = '';
       } finally {
-        if (requestId === this.requestSeq) this.loading = false;
+        if (requestId === this.requestSeq) this.setLoading(false);
       }
     },
 
