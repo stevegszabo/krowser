@@ -18,6 +18,10 @@ TRIVY_JSON = {
                     "FixedVersion": "1.1.1t",
                     "Severity": "CRITICAL",
                     "Title": "openssl: something bad",
+                    "Description": "A longer explanation of the openssl issue.",
+                    "CVSS": {"nvd": {"V3Score": 9.8, "V3Vector": "CVSS:3.1/AV:N/AC:L"}},
+                    "PublishedDate": "2023-01-15T00:00:00Z",
+                    "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2023-0001",
                 },
                 {
                     "VulnerabilityID": "CVE-2023-0002",
@@ -72,6 +76,21 @@ def test_scan_image_parses_and_sorts_findings_by_severity(monkeypatch):
     assert first["installed_version"] == "1.1.1n"
     assert first["fixed_version"] == "1.1.1t"
     assert first["severity"] == "CRITICAL"
+    assert first["description"] == "A longer explanation of the openssl issue."
+    assert first["cvss_score"] == 9.8
+    assert first["cvss_vector"] == "CVSS:3.1/AV:N/AC:L"
+    assert first["published_date"] == "2023-01-15T00:00:00Z"
+    assert first["primary_url"] == "https://avd.aquasec.com/nvd/cve-2023-0001"
+
+    # CVE-2023-0002 has no Description/CVSS/PublishedDate/PrimaryURL in the
+    # fixture -- confirm those all degrade gracefully instead of KeyError-ing,
+    # with description falling back to the (required) Title.
+    second = next(f for f in result["findings"] if f["id"] == "CVE-2023-0002")
+    assert second["description"] == "zlib: minor issue"
+    assert second["cvss_score"] is None
+    assert second["cvss_vector"] is None
+    assert second["published_date"] is None
+    assert second["primary_url"] is None
 
 
 def test_scan_image_handles_clean_image_with_no_vulnerabilities(monkeypatch):

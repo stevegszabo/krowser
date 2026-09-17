@@ -16,6 +16,10 @@ const RELATION_LABEL = {
 // only for these top-level controller kinds -- never Pod.
 const WORKLOAD_CONTROLLER_KINDS = ['DaemonSet', 'Deployment', 'StatefulSet', 'CronJob', 'Job'];
 
+function edgeColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--edge-color').trim();
+}
+
 function sameIdSet(elements, ids) {
   if (elements.length !== ids.size) return false;
   for (let i = 0; i < elements.length; i++) {
@@ -57,8 +61,8 @@ function graphView() {
             selector: 'edge',
             style: {
               width: 1.5,
-              'line-color': '#adb5bd',
-              'target-arrow-color': '#adb5bd',
+              'line-color': edgeColor(),
+              'target-arrow-color': edgeColor(),
               'target-arrow-shape': 'triangle',
               'arrow-scale': 0.9,
               'curve-style': 'bezier',
@@ -68,6 +72,14 @@ function graphView() {
         layout: { name: 'preset' },
         boxSelectionEnabled: false,
         autounselectify: true,
+      });
+
+      this.$watch('$store.app.theme', () => {
+        this.cy
+          .style()
+          .selector('edge')
+          .style({ 'line-color': edgeColor(), 'target-arrow-color': edgeColor() })
+          .update();
       });
 
       this.cy.nodeHtmlLabel([

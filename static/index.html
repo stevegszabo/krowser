@@ -4,11 +4,29 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Krowser</title>
+  <script>
+    // Applied synchronously, before the stylesheet loads, so a saved dark
+    // preference doesn't flash light for a frame on load.
+    try {
+      if (localStorage.getItem('krowser.theme') === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    } catch (_) {
+      // localStorage unavailable (private browsing, etc.) -- starts light.
+    }
+  </script>
   <link rel="stylesheet" href="vendor/xterm/xterm.css" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <div id="app" x-data="appRoot()" x-init="init()" @select-type.window="onTypeSelect($event.detail)" :class="{ 'krw-busy': $store.app.busy }">
+  <div
+    id="app"
+    x-data="appRoot()"
+    x-init="init()"
+    @select-type.window="onTypeSelect($event.detail)"
+    :class="{ 'krw-busy': $store.app.busy }"
+    x-effect="document.documentElement.setAttribute('data-theme', $store.app.theme)"
+  >
 
     <header class="krw-topbar">
       <button
@@ -43,6 +61,14 @@
         </select>
       </div>
 
+      <button
+        class="krw-pane-toggle-btn"
+        @click="toggleTheme()"
+        :title="$store.app.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+      >
+        <svg x-show="$store.app.theme === 'light'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12h2.5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8" stroke-linecap="round"/></svg>
+        <svg x-show="$store.app.theme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" stroke-linejoin="round"/></svg>
+      </button>
       <button class="krw-refresh-btn" @click="refresh()">Refresh</button>
       <span class="krw-last-updated" x-show="$store.app.lastUpdated" x-text="$store.app.lastUpdated ? 'Updated ' + $store.app.lastUpdated.toLocaleTimeString() : ''"></span>
     </header>
@@ -326,11 +352,32 @@
                     </div>
                     <div class="krw-vulnscan-list">
                       <template x-for="finding in scanResults.findings" :key="finding.id + finding.package">
-                        <div class="krw-vulnscan-row">
-                          <span class="krw-badge krw-vulnscan-severity" :class="'krw-badge-' + finding.severity.toLowerCase()" x-text="finding.severity"></span>
-                          <span class="krw-vulnscan-id" x-text="finding.id"></span>
-                          <span class="krw-vulnscan-pkg" x-text="finding.package + ' ' + (finding.installed_version || '')"></span>
-                          <span class="krw-vulnscan-fixed" x-show="finding.fixed_version" x-text="'fixed in ' + finding.fixed_version"></span>
+                        <div>
+                          <div
+                            class="krw-vulnscan-row is-expandable"
+                            :class="{ expanded: isFindingExpanded(finding.id + finding.package) }"
+                            @click="toggleFinding(finding.id + finding.package)"
+                          >
+                            <span class="krw-badge krw-vulnscan-severity" :class="'krw-badge-' + finding.severity.toLowerCase()" x-text="finding.severity"></span>
+                            <span class="krw-vulnscan-id" x-text="finding.id"></span>
+                            <span class="krw-vulnscan-pkg" x-text="finding.package + ' ' + (finding.installed_version || '')"></span>
+                            <span class="krw-vulnscan-title" x-text="finding.title"></span>
+                            <span class="krw-vulnscan-fixed" x-show="finding.fixed_version" x-text="'fixed in ' + finding.fixed_version"></span>
+                            <svg class="krw-vulnscan-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                          </div>
+                          <template x-if="isFindingExpanded(finding.id + finding.package)">
+                            <div class="krw-vulnscan-details">
+                              <p x-text="finding.description"></p>
+                              <div class="krw-vulnscan-meta">
+                                <span
+                                  x-show="finding.cvss_score"
+                                  x-text="'CVSS ' + finding.cvss_score + (finding.cvss_vector ? ' (' + finding.cvss_vector + ')' : '')"
+                                ></span>
+                                <span x-show="finding.published_date" x-text="'Published ' + finding.published_date.slice(0, 10)"></span>
+                                <a x-show="finding.primary_url" :href="finding.primary_url" target="_blank" rel="noopener">View advisory</a>
+                              </div>
+                            </div>
+                          </template>
                         </div>
                       </template>
                     </div>
@@ -359,11 +406,33 @@
                     </div>
                     <div class="krw-vulnscan-list">
                       <template x-for="finding in kubescanResults.findings" :key="finding.id">
-                        <div class="krw-vulnscan-row">
-                          <span class="krw-badge krw-vulnscan-severity" :class="'krw-badge-' + finding.severity.toLowerCase()" x-text="finding.severity"></span>
-                          <span class="krw-vulnscan-id" x-text="finding.id"></span>
-                          <span class="krw-vulnscan-pkg" x-text="finding.name"></span>
-                          <span class="krw-vulnscan-fixed" x-show="finding.category" x-text="finding.category"></span>
+                        <div>
+                          <div
+                            class="krw-vulnscan-row is-expandable"
+                            :class="{ expanded: isFindingExpanded(finding.id) }"
+                            @click="toggleFinding(finding.id)"
+                          >
+                            <span class="krw-badge krw-vulnscan-severity" :class="'krw-badge-' + finding.severity.toLowerCase()" x-text="finding.severity"></span>
+                            <span class="krw-vulnscan-id" x-text="finding.id"></span>
+                            <span class="krw-vulnscan-pkg" x-text="finding.name"></span>
+                            <span class="krw-vulnscan-fixed" x-show="finding.category" x-text="finding.category"></span>
+                            <svg class="krw-vulnscan-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                          </div>
+                          <template x-if="isFindingExpanded(finding.id)">
+                            <div class="krw-vulnscan-details">
+                              <div class="krw-vulnscan-meta">
+                                <span
+                                  x-show="finding.subcategory"
+                                  x-text="finding.category + ' › ' + finding.subcategory"
+                                ></span>
+                                <span
+                                  x-show="finding.total_resources > 0"
+                                  x-text="finding.failed_resources + ' of ' + finding.total_resources + ' resources failed this control'"
+                                ></span>
+                                <a :href="finding.docs_url" target="_blank" rel="noopener">View documentation</a>
+                              </div>
+                            </div>
+                          </template>
                         </div>
                       </template>
                     </div>

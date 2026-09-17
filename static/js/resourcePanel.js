@@ -42,6 +42,7 @@ function resourcePanel() {
     execExitInfo: '',
     execFailed: false,
     scanResults: null,
+    expandedFindings: [],
     kubescanResults: null,
     viewMode: 'yaml',
     loading: false,
@@ -128,6 +129,7 @@ function resourcePanel() {
         this.logFilter = '';
         this.error = null;
         this.scanResults = null;
+        this.expandedFindings = [];
         this.kubescanResults = null;
         this.setLoading(false);
         this.resetExec();
@@ -168,6 +170,7 @@ function resourcePanel() {
         if (scanKey !== this._lastScanKey) {
           this._lastScanKey = scanKey;
           this.scanResults = null;
+          this.expandedFindings = [];
         }
         return;
       }
@@ -180,6 +183,7 @@ function resourcePanel() {
         if (selected.id !== this._lastKubescanKey) {
           this._lastKubescanKey = selected.id;
           this.kubescanResults = null;
+          this.expandedFindings = [];
         }
         return;
       }
@@ -252,6 +256,19 @@ function resourcePanel() {
       this.$store.app.detailResource = { ...this.$store.app.detailResource, container };
     },
 
+    // Same array-of-open-keys shape as resourceList.js's
+    // expandedGroups/isGroupCollapsed/toggleGroup -- findings lists are small
+    // enough that a plain array is simpler than a Set here.
+    isFindingExpanded(key) {
+      return this.expandedFindings.includes(key);
+    },
+
+    toggleFinding(key) {
+      this.expandedFindings = this.expandedFindings.includes(key)
+        ? this.expandedFindings.filter((k) => k !== key)
+        : [...this.expandedFindings, key];
+    },
+
     // User-triggered (not auto-fetched on load, unlike describe/logs) since a
     // scan can take real time and bandwidth -- pulls the image, runs the
     // scanner, and can take anywhere from a few seconds to a couple of
@@ -263,6 +280,7 @@ function resourcePanel() {
       const requestId = ++this.requestSeq;
       this.setLoading(true);
       this.error = null;
+      this.expandedFindings = [];
       try {
         const res = await api.getPodVulnScan({
           namespace: selected.namespace,
@@ -290,6 +308,7 @@ function resourcePanel() {
       const requestId = ++this.requestSeq;
       this.setLoading(true);
       this.error = null;
+      this.expandedFindings = [];
       try {
         const res = await api.getWorkloadKubescan({
           kind: selected.kind,

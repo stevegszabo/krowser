@@ -100,12 +100,21 @@ def _parse_findings(raw: dict) -> list[dict]:
     for control_id, control in controls.items():
         if control.get("status") != "failed":
             continue
+        finding_id = control.get("controlID", control_id)
+        counters = control.get("ResourceCounters") or {}
         findings.append(
             {
-                "id": control.get("controlID", control_id),
+                "id": finding_id,
                 "name": control.get("name", "unknown control"),
                 "severity": (control.get("severity") or "unknown").upper(),
                 "category": (control.get("category") or {}).get("name", ""),
+                "subcategory": ((control.get("category") or {}).get("subCategory") or {}).get("name", ""),
+                "failed_resources": counters.get("failedResources", 0),
+                "total_resources": sum(counters.values()),
+                # Kubescape's scan output has no embedded description or
+                # remediation text -- that only lives on its docs site, at a
+                # fixed, ID-derived URL (verified live against C-0004).
+                "docs_url": f"https://kubescape.io/docs/controls/{finding_id.lower()}/",
             }
         )
     findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f["severity"], 99), f["name"]))

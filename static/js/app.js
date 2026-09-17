@@ -25,6 +25,15 @@ function loadStoredLeftPaneWidth() {
   }
 }
 
+function loadStoredTheme() {
+  try {
+    const stored = localStorage.getItem('krowser.theme');
+    return stored === 'dark' ? 'dark' : 'light';
+  } catch (_) {
+    return 'light';
+  }
+}
+
 document.addEventListener('alpine:init', () => {
   Alpine.store('app', {
     contexts: [],
@@ -39,6 +48,7 @@ document.addEventListener('alpine:init', () => {
     detailPaneWidth: loadStoredDetailPaneWidth(),
     leftPaneVisible: loadStoredLeftPaneVisible(),
     leftPaneWidth: loadStoredLeftPaneWidth(),
+    theme: loadStoredTheme(),
     loading: false,
     detailLoading: false,
     error: null,
@@ -142,6 +152,16 @@ document.addEventListener('alpine:init', () => {
       store.leftPaneVisible = !store.leftPaneVisible;
       try {
         localStorage.setItem('krowser.leftPaneVisible', String(store.leftPaneVisible));
+      } catch (_) {
+        // localStorage unavailable (private browsing, etc.) -- preference just won't persist.
+      }
+    },
+
+    toggleTheme() {
+      const store = this.$store.app;
+      store.theme = store.theme === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('krowser.theme', store.theme);
       } catch (_) {
         // localStorage unavailable (private browsing, etc.) -- preference just won't persist.
       }

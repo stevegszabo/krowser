@@ -51,10 +51,30 @@ def _run_trivy(image: str) -> dict:
         raise ScanFailedError(f"scan of {image!r} returned output that couldn't be parsed") from exc
 
 
+_CVSS_VENDOR_PRIORITY = ("nvd", "redhat", "ghsa")
+
+
+def _cvss(vuln: dict) -> tuple[float | None, str | None]:
+    """Picks a single representative CVSS score/vector out of Trivy's
+    per-vendor CVSS map, preferring the more authoritative vendors and V3
+    over V2 -- vulnerabilities can carry scores from several sources
+    (nvd, redhat, ghsa, ...) that don't always agree.
+    """
+    cvss = vuln.get("CVSS") or {}
+    candidates = [cvss[v] for v in _CVSS_VENDOR_PRIORITY if v in cvss]
+    candidates += [entry for vendor, entry in cvss.items() if vendor not in _CVSS_VENDOR_PRIORITY]
+    for entry in candidates:
+        score = entry.get("V3Score", entry.get("V2Score"))
+        if score is not None:
+            return score, entry.get("V3Vector", entry.get("V2Vector"))
+    return None, None
+
+
 def _parse_findings(raw: dict) -> list[dict]:
     findings = []
     for result in raw.get("Results") or []:
         for vuln in result.get("Vulnerabilities") or []:
+            cvss_score, cvss_vector = _cvss(vuln)
             findings.append(
                 {
                     "id": vuln.get("VulnerabilityID", "UNKNOWN"),
@@ -63,6 +83,11 @@ def _parse_findings(raw: dict) -> list[dict]:
                     "fixed_version": vuln.get("FixedVersion"),
                     "severity": vuln.get("Severity", "UNKNOWN"),
                     "title": vuln.get("Title") or vuln.get("Description", ""),
+                    "description": vuln.get("Description") or vuln.get("Title") or "",
+                    "cvss_score": cvss_score,
+                    "cvss_vector": cvss_vector,
+                    "published_date": vuln.get("PublishedDate"),
+                    "primary_url": vuln.get("PrimaryURL"),
                 }
             )
     findings.sort(key=lambda f: (_SEVERITY_ORDER.get(f["severity"], 99), f["package"]))

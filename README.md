@@ -4,8 +4,11 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
 
 ## Screenshots
 
-![StatefulSets view showing the full relationship graph for a vault StatefulSet, with the YAML detail pane open on a pod](krowser-01.png)
-*StatefulSets view (`base-vault` namespace) — Services and EndpointSlices routing to the `vault-0` pod, alongside the ConfigMap, Secret, and PersistentVolumeClaim/PersistentVolume it uses, with the resizable read-only YAML pane open.*
+![StatefulSets view showing the relationship graph for the vault StatefulSet, with the Kubescape compliance scan results open](krowser-01.png)
+*StatefulSets view (`base-vault` namespace) — the `vault` StatefulSet's relationship graph (its Pod, ConfigMap, Secret, PersistentVolumeClaim/PersistentVolume, ServiceAccount, and ClusterRoleBinding/ClusterRole), with a Kubescape compliance scan open showing its score and findings by severity.*
+
+![Deployments view showing the relationship graph for the argocd-server Deployment, with the YAML detail pane open](krowser-02.png)
+*Deployments view (`base-argocd` namespace) — the full ArgoCD Deployments graph, with the resizable read-only YAML pane open on `argocd-server`.*
 
 ## Features
 
@@ -21,6 +24,7 @@ A web app for browsing the resources in a Kubernetes cluster and how they relate
   - **Execute command** (Pods only) — a `kubectl exec`-style terminal: pick a container from the dropdown, type a command (a one-shot command like `date`, or an interactive one like `sh`/`bash`), and press Run to stream it live in a real terminal (powered by xterm.js) over a WebSocket to the Kubernetes exec API, with full TTY resize support
   - **Scan for vulnerabilities** (Pods only) — pick a container from the dropdown and press Scan to check its image for known CVEs via [Trivy](https://github.com/aquasecurity/trivy), showing severity counts and a findings list (CVE ID, package, installed/fixed version); requires `trivy` on `PATH` (see Configuration) and currently only works for publicly pullable images
   - **Scan with Kubescape** (DaemonSets, Deployments, StatefulSets, CronJobs, and Jobs only — not Pods, since [Kubescape](https://github.com/kubescape/kubescape) itself refuses to scan a Pod that has an owner) — press Scan to check the resource's configuration against Kubescape's compliance controls (resource limits, non-root, privilege escalation, network policy, etc.), showing a compliance score, severity counts, and a list of failed controls; requires `kubescape` on `PATH` (see Configuration)
+- Light/dark theme toggle in the topbar, persisted across reloads
 - Auto-refreshes on a polling interval without resetting your pan/zoom or losing your current selection unless the underlying resource set actually changes
 - Read-only with respect to cluster resources — no create/edit/delete/scale actions; the exceptions are **Execute command**, which runs a process inside a pod's container exactly like `kubectl exec`, and the two **Scan** actions, which pull the image (Trivy) or read live cluster state (Kubescape) being scanned
 

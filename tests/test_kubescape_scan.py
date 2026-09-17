@@ -16,7 +16,13 @@ KUBESCAPE_JSON = {
                 "name": "Resources memory limit and request",
                 "status": "failed",
                 "severity": "High",
-                "category": {"name": "Workload"},
+                "category": {"name": "Workload", "subCategory": {"name": "Resource management"}},
+                "ResourceCounters": {
+                    "passedResources": 0,
+                    "failedResources": 1,
+                    "skippedResources": 4,
+                    "excludedResources": 0,
+                },
             },
             "C-0013": {
                 "controlID": "C-0013",
@@ -77,6 +83,19 @@ def test_scan_workload_parses_only_failed_controls_sorted_by_severity(monkeypatc
     assert first["name"] == "Resources memory limit and request"
     assert first["severity"] == "HIGH"
     assert first["category"] == "Workload"
+    assert first["subcategory"] == "Resource management"
+    assert first["failed_resources"] == 1
+    assert first["total_resources"] == 5
+    assert first["docs_url"] == "https://kubescape.io/docs/controls/c-0004/"
+
+    # C-0013 has no `category.subCategory`/`ResourceCounters` in the fixture
+    # -- confirm those degrade to empty/zero instead of KeyError-ing, while
+    # docs_url is still constructed from the id alone.
+    second = next(f for f in result["findings"] if f["id"] == "C-0013")
+    assert second["subcategory"] == ""
+    assert second["failed_resources"] == 0
+    assert second["total_resources"] == 0
+    assert second["docs_url"] == "https://kubescape.io/docs/controls/c-0013/"
 
 
 def test_scan_workload_treats_nonzero_exit_as_success_when_output_written(monkeypatch):
