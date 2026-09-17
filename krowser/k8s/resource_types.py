@@ -37,6 +37,11 @@ _BY_ID = {rt.id: rt for rt in RESOURCE_TYPES}
 ICONS_BY_KIND: dict[str, str] = {rt.kind: rt.icon for rt in RESOURCE_TYPES}
 ICONS_BY_KIND.setdefault("ReplicaSet", "replicaset")
 ICONS_BY_KIND.setdefault("EndpointSlice", "endpointslice")
+ICONS_BY_KIND.setdefault("ServiceAccount", "serviceaccount")
+ICONS_BY_KIND.setdefault("Role", "role")
+ICONS_BY_KIND.setdefault("RoleBinding", "rolebinding")
+ICONS_BY_KIND.setdefault("ClusterRole", "clusterrole")
+ICONS_BY_KIND.setdefault("ClusterRoleBinding", "clusterrolebinding")
 
 
 class UnknownResourceTypeError(KeyError):

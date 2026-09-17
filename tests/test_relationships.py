@@ -2,6 +2,8 @@ from kubernetes import client as k8s
 
 from krowser.graph.relationships import (
     build_edges,
+    link_clusterrolebinding_to_clusterrole,
+    link_clusterrolebinding_to_serviceaccount_subjects,
     link_endpointslice_to_pods,
     link_ingress_to_services,
     link_owner_references,
@@ -9,7 +11,10 @@ from krowser.graph.relationships import (
     link_pod_to_node,
     link_pod_to_pvc,
     link_pod_to_secret,
+    link_pod_to_serviceaccount,
     link_pvc_to_pv,
+    link_rolebinding_to_role_or_clusterrole,
+    link_rolebinding_to_serviceaccount_subjects,
     link_service_to_endpointslices,
 )
 
@@ -375,4 +380,134 @@ def test_build_edges_static_pod_has_single_owns_edge_to_node(make_pod, make_node
     assert {(e.source, e.target, e.relation) for e in edges} == {
         ("node-1", "pod-1", "owns"),
         ("pod-2", "node-1", "runs-on"),
+    }
+
+
+def test_link_pod_to_serviceaccount_explicit_name(make_pod, make_service_account):
+    pod = make_pod("pod-1", "web", service_account_name="my-sa")
+    sa = make_service_account("sa-1", "my-sa")
+    other_sa = make_service_account("sa-2", "other-sa")
+
+    edges = link_pod_to_serviceaccount({"Pod": [pod], "ServiceAccount": [sa, other_sa]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("pod-1", "sa-1", "runs-as")]
+
+
+def test_link_pod_to_serviceaccount_defaults_to_default_sa(make_pod, make_service_account):
+    pod = make_pod("pod-1", "web")  # no service_account_name set
+    default_sa = make_service_account("sa-1", "default")
+
+    edges = link_pod_to_serviceaccount({"Pod": [pod], "ServiceAccount": [default_sa]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("pod-1", "sa-1", "runs-as")]
+
+
+def test_link_rolebinding_to_role(make_role_binding, make_role):
+    binding = make_role_binding("rb-1", "view-binding", role_ref_kind="Role", role_ref_name="view")
+    role = make_role("role-1", "view")
+    unrelated_role = make_role("role-2", "other")
+
+    edges = link_rolebinding_to_role_or_clusterrole(
+        {"RoleBinding": [binding], "Role": [role, unrelated_role]}
+    )
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("rb-1", "role-1", "grants")]
+
+
+def test_link_rolebinding_to_clusterrole(make_role_binding, make_cluster_role):
+    binding = make_role_binding("rb-1", "view-binding", role_ref_kind="ClusterRole", role_ref_name="view")
+    cluster_role = make_cluster_role("cr-1", "view")
+
+    edges = link_rolebinding_to_role_or_clusterrole(
+        {"RoleBinding": [binding], "ClusterRole": [cluster_role]}
+    )
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("rb-1", "cr-1", "grants")]
+
+
+def test_link_rolebinding_to_role_no_match_is_silent(make_role_binding):
+    binding = make_role_binding("rb-1", "view-binding", role_ref_kind="Role", role_ref_name="nope")
+
+    edges = link_rolebinding_to_role_or_clusterrole({"RoleBinding": [binding], "Role": []})
+
+    assert edges == []
+
+
+def test_link_clusterrolebinding_to_clusterrole(make_cluster_role, make_cluster_role_binding):
+    role = make_cluster_role("cr-1", "view")
+    bound_binding = make_cluster_role_binding("crb-1", "view-binding", role_name="view")
+    unrelated_binding = make_cluster_role_binding("crb-2", "other-binding", role_name="other-role")
+
+    edges = link_clusterrolebinding_to_clusterrole(
+        {"ClusterRole": [role], "ClusterRoleBinding": [bound_binding, unrelated_binding]}
+    )
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("crb-1", "cr-1", "grants")]
+
+
+def test_link_rolebinding_to_serviceaccount_subjects(make_role_binding, make_service_account):
+    binding = make_role_binding(
+        "rb-1", "view-binding", role_ref_kind="Role",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="my-sa", namespace="ns")],
+    )
+    sa = make_service_account("sa-1", "my-sa", namespace="ns")
+
+    edges = link_rolebinding_to_serviceaccount_subjects({"RoleBinding": [binding], "ServiceAccount": [sa]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("rb-1", "sa-1", "binds")]
+
+
+def test_link_rolebinding_to_serviceaccount_subjects_defaults_to_binding_namespace(
+    make_role_binding, make_service_account
+):
+    # A RoleBinding's ServiceAccount subject with no explicit namespace
+    # implicitly refers to one in the binding's own namespace.
+    binding = make_role_binding(
+        "rb-1", "view-binding", namespace="ns", role_ref_kind="Role",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="my-sa", namespace=None)],
+    )
+    sa = make_service_account("sa-1", "my-sa", namespace="ns")
+
+    edges = link_rolebinding_to_serviceaccount_subjects({"RoleBinding": [binding], "ServiceAccount": [sa]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("rb-1", "sa-1", "binds")]
+
+
+def test_link_clusterrolebinding_to_serviceaccount_subjects_cross_namespace(
+    make_cluster_role_binding, make_service_account
+):
+    binding = make_cluster_role_binding(
+        "crb-1", "view-binding",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="my-sa", namespace="other-ns")],
+    )
+    sa_in_other_ns = make_service_account("sa-1", "my-sa", namespace="other-ns")
+    sa_in_default_ns = make_service_account("sa-2", "my-sa", namespace="ns")
+
+    edges = link_clusterrolebinding_to_serviceaccount_subjects(
+        {"ClusterRoleBinding": [binding], "ServiceAccount": [sa_in_other_ns, sa_in_default_ns]}
+    )
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("crb-1", "sa-1", "binds")]
+
+
+def test_multiple_bindings_to_same_shared_clusterrole_each_get_a_grants_edge(
+    make_cluster_role, make_cluster_role_binding
+):
+    # Regression test: a well-known built-in ClusterRole like
+    # "system:auth-delegator" is commonly referenced by many unrelated
+    # ClusterRoleBindings. This linker/module has no reachability filtering
+    # of its own (that's krowser.graph.builder._reachable_uids's job, tested
+    # separately) -- it should just correctly emit a "grants" edge for every
+    # binding that references the shared role, not silently drop any.
+    shared_role = make_cluster_role("cr-1", "system:auth-delegator")
+    our_binding = make_cluster_role_binding("crb-1", "vault", role_name="system:auth-delegator")
+    other_binding = make_cluster_role_binding("crb-2", "some-other-component", role_name="system:auth-delegator")
+
+    edges = link_clusterrolebinding_to_clusterrole(
+        {"ClusterRole": [shared_role], "ClusterRoleBinding": [our_binding, other_binding]}
+    )
+
+    assert {(e.source, e.target, e.relation) for e in edges} == {
+        ("crb-1", "cr-1", "grants"),
+        ("crb-2", "cr-1", "grants"),
     }

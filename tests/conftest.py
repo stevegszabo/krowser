@@ -33,6 +33,7 @@ def make_pod():
         init_containers=None,
         image_pull_secrets=None,
         node_name=None,
+        service_account_name=None,
     ):
         return k8s.V1Pod(
             metadata=_meta(uid, name, namespace, owner_refs, labels),
@@ -42,6 +43,7 @@ def make_pod():
                 volumes=volumes or [],
                 image_pull_secrets=image_pull_secrets,
                 node_name=node_name,
+                service_account_name=service_account_name,
             ),
             status=k8s.V1PodStatus(
                 phase=phase,
@@ -259,6 +261,62 @@ def make_cron_job():
                 schedule=schedule, suspend=suspend, job_template=k8s.V1JobTemplateSpec()
             ),
             status=k8s.V1CronJobStatus(),
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_service_account():
+    def _make(uid, name, namespace="ns"):
+        return k8s.V1ServiceAccount(metadata=_meta(uid, name, namespace))
+
+    return _make
+
+
+@pytest.fixture
+def make_role():
+    def _make(uid, name, namespace="ns", rules=None):
+        return k8s.V1Role(
+            metadata=_meta(uid, name, namespace),
+            rules=rules if rules is not None else [k8s.V1PolicyRule(api_groups=[""], resources=["pods"], verbs=["get", "list"])],
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_role_binding():
+    def _make(uid, name, namespace="ns", role_ref_kind="Role", role_ref_name=None, subjects=None):
+        return k8s.V1RoleBinding(
+            metadata=_meta(uid, name, namespace),
+            role_ref=k8s.V1RoleRef(
+                api_group="rbac.authorization.k8s.io", kind=role_ref_kind, name=role_ref_name or name
+            ),
+            subjects=subjects if subjects is not None else [k8s.RbacV1Subject(kind="User", name="alice")],
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_cluster_role():
+    def _make(uid, name, rules=None):
+        return k8s.V1ClusterRole(
+            metadata=_meta(uid, name, namespace=None),
+            rules=rules if rules is not None else [k8s.V1PolicyRule(api_groups=[""], resources=["pods"], verbs=["get", "list"])],
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_cluster_role_binding():
+    def _make(uid, name, role_name=None, subjects=None):
+        return k8s.V1ClusterRoleBinding(
+            metadata=_meta(uid, name, namespace=None),
+            role_ref=k8s.V1RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=role_name or name),
+            subjects=subjects if subjects is not None else [k8s.RbacV1Subject(kind="User", name="alice")],
         )
 
     return _make

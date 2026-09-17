@@ -7,6 +7,8 @@ const RELATION_LABEL = {
   exposes: 'exposes',
   targets: 'targets',
   'runs-on': 'runs on',
+  'runs-as': 'runs as',
+  grants: 'grants',
 };
 
 // Kubescape's "scan workload" refuses to scan a Pod that has an owner (which

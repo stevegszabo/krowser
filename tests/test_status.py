@@ -136,3 +136,38 @@ def test_pod_node_lists_containers_init_first(make_pod, make_deployment):
 
     deploy = make_deployment("dep-1", "web")
     assert build_node(deploy, "Deployment", "deployment", True).containers == []
+
+
+def test_service_account_reports_unknown_health(make_service_account):
+    node = build_node(make_service_account("sa-1", "my-sa"), "ServiceAccount", "serviceaccount", True)
+    assert node.health == "unknown"
+    assert node.status_label == "ServiceAccount"
+
+
+def test_role_reports_rule_count_badge(make_role):
+    node = build_node(make_role("role-1", "view"), "Role", "role", True)
+    assert node.health == "unknown"
+    assert node.status_label == "1 rule"
+    assert node.badges[-1].text == "1 rule"
+
+
+def test_cluster_role_reports_rule_count_badge(make_cluster_role):
+    node = build_node(make_cluster_role("cr-1", "view"), "ClusterRole", "clusterrole", True)
+    assert node.health == "unknown"
+    assert node.status_label == "1 rule"
+
+
+def test_role_binding_reports_subject_count_badge(make_role_binding):
+    node = build_node(
+        make_role_binding("rb-1", "view-binding"), "RoleBinding", "rolebinding", True
+    )
+    assert node.health == "unknown"
+    assert node.status_label == "1 subject"
+
+
+def test_cluster_role_binding_reports_subject_count_badge(make_cluster_role_binding):
+    node = build_node(
+        make_cluster_role_binding("crb-1", "view-binding"), "ClusterRoleBinding", "clusterrolebinding", True
+    )
+    assert node.health == "unknown"
+    assert node.status_label == "1 subject"

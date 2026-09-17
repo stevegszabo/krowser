@@ -228,6 +228,117 @@ def link_pod_to_node(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_pod_to_serviceaccount(world: World) -> list[GraphEdge]:
+    """Every pod has an effective ServiceAccount even when spec.serviceAccountName
+    is unset (it implicitly runs as "default" in its namespace), so that's the
+    key used to match here rather than skipping pods with no explicit name."""
+    service_accounts_by_key = {
+        (sa.metadata.namespace, sa.metadata.name): sa for sa in world.get("ServiceAccount", [])
+    }
+    edges = []
+    for pod in world.get("Pod", []):
+        sa_name = pod.spec.service_account_name or "default"
+        sa = service_accounts_by_key.get((pod.metadata.namespace, sa_name))
+        if sa:
+            edges.append(
+                GraphEdge(
+                    id=f"runs-as:{pod.metadata.uid}:{sa.metadata.uid}",
+                    source=pod.metadata.uid,
+                    target=sa.metadata.uid,
+                    relation="runs-as",
+                )
+            )
+    return edges
+
+
+def link_rolebinding_to_role_or_clusterrole(world: World) -> list[GraphEdge]:
+    """A RoleBinding references the Role/ClusterRole it grants via
+    roleRef.kind + roleRef.name, not an ownerReference -- and unlike a
+    ClusterRoleBinding (always roleRef.kind == "ClusterRole"), a RoleBinding
+    can point at either, so both pools are checked here."""
+    roles_by_key = {(r.metadata.namespace, r.metadata.name): r for r in world.get("Role", [])}
+    cluster_roles_by_name = {r.metadata.name: r for r in world.get("ClusterRole", [])}
+    edges = []
+    for binding in world.get("RoleBinding", []):
+        role_ref = binding.role_ref
+        if role_ref.kind == "Role":
+            target = roles_by_key.get((binding.metadata.namespace, role_ref.name))
+        elif role_ref.kind == "ClusterRole":
+            target = cluster_roles_by_name.get(role_ref.name)
+        else:
+            target = None
+        if target:
+            edges.append(
+                GraphEdge(
+                    id=f"grants:{binding.metadata.uid}:{target.metadata.uid}",
+                    source=binding.metadata.uid,
+                    target=target.metadata.uid,
+                    relation="grants",
+                )
+            )
+    return edges
+
+
+def link_clusterrolebinding_to_clusterrole(world: World) -> list[GraphEdge]:
+    """A ClusterRoleBinding references the ClusterRole it grants via
+    roleRef.name, not an ownerReference, so this needs its own linker
+    (unlike Deployment->ReplicaSet->Pod etc., handled generically above)."""
+    roles_by_name = {r.metadata.name: r for r in world.get("ClusterRole", [])}
+    edges = []
+    for binding in world.get("ClusterRoleBinding", []):
+        role_ref = binding.role_ref
+        if role_ref.kind != "ClusterRole":
+            continue
+        role = roles_by_name.get(role_ref.name)
+        if role:
+            edges.append(
+                GraphEdge(
+                    id=f"grants:{binding.metadata.uid}:{role.metadata.uid}",
+                    source=binding.metadata.uid,
+                    target=role.metadata.uid,
+                    relation="grants",
+                )
+            )
+    return edges
+
+
+def _serviceaccount_subject_edges(bindings: list[Any], world: World) -> list[GraphEdge]:
+    service_accounts_by_key = {
+        (sa.metadata.namespace, sa.metadata.name): sa for sa in world.get("ServiceAccount", [])
+    }
+    edges = []
+    for binding in bindings:
+        for subject in binding.subjects or []:
+            if subject.kind != "ServiceAccount":
+                continue
+            namespace = subject.namespace or binding.metadata.namespace
+            sa = service_accounts_by_key.get((namespace, subject.name))
+            if sa:
+                edges.append(
+                    GraphEdge(
+                        id=f"binds:{binding.metadata.uid}:{sa.metadata.uid}",
+                        source=binding.metadata.uid,
+                        target=sa.metadata.uid,
+                        relation="binds",
+                    )
+                )
+    return edges
+
+
+def link_rolebinding_to_serviceaccount_subjects(world: World) -> list[GraphEdge]:
+    """A RoleBinding also "binds" its Subjects (who the grant applies to),
+    not just the Role/ClusterRole -- of those, only ServiceAccount subjects
+    are ever fetched into the graph (User/Group aren't real cluster objects
+    krowser can look up)."""
+    return _serviceaccount_subject_edges(world.get("RoleBinding", []), world)
+
+
+def link_clusterrolebinding_to_serviceaccount_subjects(world: World) -> list[GraphEdge]:
+    """Same as link_rolebinding_to_serviceaccount_subjects, above, for
+    ClusterRoleBinding's subjects."""
+    return _serviceaccount_subject_edges(world.get("ClusterRoleBinding", []), world)
+
+
 SERVICE_NAME_LABEL = "kubernetes.io/service-name"
 
 
@@ -285,6 +396,11 @@ LINKERS = [
     link_pod_to_secret,
     link_service_to_endpointslices,
     link_endpointslice_to_pods,
+    link_pod_to_serviceaccount,
+    link_rolebinding_to_role_or_clusterrole,
+    link_clusterrolebinding_to_clusterrole,
+    link_rolebinding_to_serviceaccount_subjects,
+    link_clusterrolebinding_to_serviceaccount_subjects,
 ]
 
 

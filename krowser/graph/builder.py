@@ -25,7 +25,8 @@ def fetch_root(
 def _reachable_uids(root_uids: set[str], edges: list[GraphEdge]) -> set[str]:
     # Most relations are traversed in both directions, since either endpoint
     # legitimately wants to discover the other (e.g. a Pod should show which
-    # Service exposes it). "uses" (Pod -> ConfigMap/Secret) is the exception:
+    # Service exposes it). "uses" (Pod -> ConfigMap/Secret) and "grants"
+    # (RoleBinding/ClusterRoleBinding -> Role/ClusterRole) are the exceptions:
     # a ConfigMap/Secret is very commonly shared across many unrelated pods
     # in a namespace (a TLS cert, an injected CA bundle, common RBAC config),
     # so letting reachability flow *backward* out of one would pull every
@@ -33,10 +34,14 @@ def _reachable_uids(root_uids: set[str], edges: list[GraphEdge]) -> set[str]:
     # StatefulSet's pod showing up in a Deployments-only view just because
     # both mount the same "argocd-cmd-params-cm". A pod can reach the
     # ConfigMap/Secret it uses, but that never flows back out to other pods.
+    # Likewise, a well-known built-in ClusterRole (e.g. "system:auth-delegator")
+    # is commonly referenced by many unrelated ClusterRoleBindings cluster-wide
+    # -- one workload's own binding can reach the ClusterRole it grants, but
+    # that never flows back out to every *other* binding that also grants it.
     adjacency: dict[str, set[str]] = {}
     for edge in edges:
         adjacency.setdefault(edge.source, set()).add(edge.target)
-        if edge.relation != "uses":
+        if edge.relation not in ("uses", "grants"):
             adjacency.setdefault(edge.target, set()).add(edge.source)
 
     visited = set(root_uids)

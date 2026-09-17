@@ -13,7 +13,8 @@ from krowser.k8s.metrics import Usage
 ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
-    "EndpointSlice", "Node",
+    "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
+    "ClusterRoleBinding",
 ]
 
 
@@ -308,3 +309,118 @@ def test_persistent_volumes_all_namespaces_shows_everything(monkeypatch, make_pv
     graph = GraphBuilder(mgr=None).build("storage/persistentvolumes", namespace=None, context=None)
 
     assert {n.id for n in graph.nodes} == {"pv-1", "pv-2"}
+
+
+def test_pod_graph_includes_serviceaccount_role_and_clusterrole(
+    monkeypatch, make_pod, make_service_account, make_role, make_role_binding,
+    make_cluster_role, make_cluster_role_binding,
+):
+    pod = make_pod("pod-1", "app", service_account_name="my-sa")
+    sa = make_service_account("sa-1", "my-sa")
+    unrelated_sa = make_service_account("sa-2", "other-sa")
+
+    role = make_role("role-1", "view")
+    role_binding = make_role_binding(
+        "rb-1", "view-binding", role_ref_kind="Role", role_ref_name="view",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="my-sa", namespace="ns")],
+    )
+    # Deliberately a different role name (not "view") and a different subject
+    # SA, so it shares no node with the pod's own graph -- reusing "view"
+    # here would legitimately bridge the two via the shared Role node.
+    unrelated_role_binding = make_role_binding(
+        "rb-2", "other-binding", role_ref_kind="Role", role_ref_name="unrelated-role",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="other-sa", namespace="ns")],
+    )
+
+    cluster_role = make_cluster_role("cr-1", "cluster-view")
+    cluster_role_binding = make_cluster_role_binding(
+        "crb-1", "cluster-view-binding", role_name="cluster-view",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="my-sa", namespace="ns")],
+    )
+    unrelated_cluster_role_binding = make_cluster_role_binding(
+        "crb-2", "other-cluster-binding", role_name="unrelated-cluster-role",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="other-sa", namespace="ns")],
+    )
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Pod": [pod],
+            "ServiceAccount": [sa, unrelated_sa],
+            "Role": [role],
+            "RoleBinding": [role_binding, unrelated_role_binding],
+            "ClusterRole": [cluster_role],
+            "ClusterRoleBinding": [cluster_role_binding, unrelated_cluster_role_binding],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/pods", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"pod-1", "sa-1", "role-1", "rb-1", "cr-1", "crb-1"}
+    assert "sa-2" not in node_ids
+    assert "rb-2" not in node_ids
+    assert "crb-2" not in node_ids
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("pod-1", "sa-1", "runs-as") in relations
+    assert ("rb-1", "role-1", "grants") in relations
+    assert ("rb-1", "sa-1", "binds") in relations
+    assert ("crb-1", "cr-1", "grants") in relations
+    assert ("crb-1", "sa-1", "binds") in relations
+
+
+def test_shared_builtin_clusterrole_does_not_bridge_unrelated_bindings(
+    monkeypatch, make_pod, make_service_account, make_cluster_role, make_cluster_role_binding,
+):
+    # Regression test for a real bug: viewing a StatefulSet whose pod's
+    # ServiceAccount is bound to a widely-shared built-in ClusterRole (e.g.
+    # "system:auth-delegator") pulled in every *other* ClusterRoleBinding
+    # that also references that same role, even though they name completely
+    # unrelated ServiceAccounts -- reachability was flowing backward through
+    # the shared ClusterRole node. Fixed by making that edge "grants"
+    # (one-directional), not "binds" (bidirectional).
+    pod = make_pod("pod-1", "vault-0", service_account_name="vault")
+    sa = make_service_account("sa-1", "vault")
+    other_sa_1 = make_service_account("sa-2", "some-controller")
+    other_sa_2 = make_service_account("sa-3", "another-controller")
+    other_sa_3 = make_service_account("sa-4", "yet-another-controller")
+
+    shared_role = make_cluster_role("cr-1", "system:auth-delegator")
+    our_binding = make_cluster_role_binding(
+        "crb-1", "vault", role_name="system:auth-delegator",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="vault", namespace="ns")],
+    )
+    other_binding_1 = make_cluster_role_binding(
+        "crb-2", "some-controller", role_name="system:auth-delegator",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="some-controller", namespace="ns")],
+    )
+    other_binding_2 = make_cluster_role_binding(
+        "crb-3", "another-controller", role_name="system:auth-delegator",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="another-controller", namespace="ns")],
+    )
+    other_binding_3 = make_cluster_role_binding(
+        "crb-4", "yet-another-controller", role_name="system:auth-delegator",
+        subjects=[k8s.RbacV1Subject(kind="ServiceAccount", name="yet-another-controller", namespace="ns")],
+    )
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Pod": [pod],
+            "ServiceAccount": [sa, other_sa_1, other_sa_2, other_sa_3],
+            "ClusterRole": [shared_role],
+            "ClusterRoleBinding": [our_binding, other_binding_1, other_binding_2, other_binding_3],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/pods", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"pod-1", "sa-1", "cr-1", "crb-1"}
+    assert "crb-2" not in node_ids
+    assert "crb-3" not in node_ids
+    assert "crb-4" not in node_ids
+    assert "sa-2" not in node_ids
+    assert "sa-3" not in node_ids
+    assert "sa-4" not in node_ids
