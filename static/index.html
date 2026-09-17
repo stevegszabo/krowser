@@ -132,6 +132,14 @@
           <button @click="zoomIn()" title="Zoom in">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="7"/><path d="M21 21l-5.5-5.5M10 7v6M7 10h6"/></svg>
           </button>
+          <div class="krw-toolbar-sep"></div>
+          <button
+            @click="exportImage()"
+            :disabled="!$store.app.graph || $store.app.graph.nodes.length === 0"
+            title="Save as image"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0-4-4m4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          </button>
         </div>
 
         <template x-if="$store.app.error">
@@ -163,6 +171,10 @@
             @click.outside="closeContextMenu()"
             @keydown.escape.window="closeContextMenu()"
           >
+            <button
+              class="krw-context-menu-item"
+              @click="eventsFromContextMenu()"
+            >Get events</button>
             <button
               class="krw-context-menu-item"
               @click="selectFromContextMenu()"
@@ -215,6 +227,7 @@
               <span class="krw-detail-kind" x-text="$store.app.detailResource.kind"></span>
               <span class="krw-detail-name" x-text="$store.app.detailResource.name"></span>
               <span class="krw-detail-mode" x-show="viewMode === 'describe'">Describe</span>
+              <span class="krw-detail-mode" x-show="viewMode === 'events'">Events</span>
               <span class="krw-detail-mode" x-show="viewMode === 'kubescan'">Kubescape</span>
               <template x-if="viewMode === 'logs'">
                 <span class="krw-detail-mode-group">
@@ -324,6 +337,9 @@
                   </div>
                 </template>
               </div>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'events'">
+              <pre class="krw-describe" x-text="eventsText"></pre>
             </template>
             <template x-if="!loading && !error && viewMode === 'logs'">
               <pre class="krw-logs" x-html="filteredLogsHtml"></pre>
@@ -449,6 +465,7 @@
   <script src="vendor/cytoscape/cytoscape.min.js"></script>
   <script src="vendor/cytoscape/cytoscape-dagre.js"></script>
   <script src="vendor/cytoscape/cytoscape-node-html-label.js"></script>
+  <script src="vendor/html2canvas/html2canvas.min.js"></script>
   <script src="vendor/xterm/xterm.js"></script>
   <script src="vendor/xterm/xterm-addon-fit.js"></script>
   <script src="js/icons.js"></script>

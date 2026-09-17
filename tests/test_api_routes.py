@@ -115,6 +115,27 @@ def test_resource_yaml_returns_structured_data(client, monkeypatch, make_pod):
     assert data["metadata"]["namespace"] == "ns"
 
 
+def test_resource_yaml_supports_horizontal_pod_autoscaler(client, monkeypatch, make_hpa):
+    hpa = make_hpa("hpa-1", "web", namespace="ns")
+    hpa.kind = "HorizontalPodAutoscaler"
+    hpa.api_version = "autoscaling/v2"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND,
+        "HorizontalPodAutoscaler",
+        lambda mgr, context, namespace, name: hpa,
+    )
+
+    res = client.get(
+        "/api/resource-yaml",
+        params={"kind": "HorizontalPodAutoscaler", "name": "web", "namespace": "ns"},
+    )
+
+    assert res.status_code == 200
+    yaml_text = res.json()["yaml"]
+    assert "kind: HorizontalPodAutoscaler" in yaml_text
+    assert "name: web" in yaml_text
+
+
 def test_resource_yaml_unknown_kind_is_404(client):
     res = client.get("/api/resource-yaml", params={"kind": "Bogus", "name": "x"})
     assert res.status_code == 404
@@ -136,7 +157,9 @@ def test_pod_describe_returns_sections(client, monkeypatch, make_pod):
     monkeypatch.setitem(
         routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
     )
-    monkeypatch.setattr(routes_resource_module, "get_pod_events", lambda mgr, context, namespace, name: [])
+    monkeypatch.setattr(
+        routes_resource_module, "get_resource_events", lambda mgr, context, namespace, kind, name: []
+    )
 
     res = client.get("/api/pod-describe", params={"name": "web-abc", "namespace": "ns"})
 
@@ -158,6 +181,44 @@ def test_pod_describe_maps_resource_access_error(client, monkeypatch):
     monkeypatch.setitem(routes_resource_module.GETTERS_BY_KIND, "Pod", _raise)
 
     res = client.get("/api/pod-describe", params={"name": "x", "namespace": "ns"})
+
+    assert res.status_code == 403
+
+
+def test_resource_events_endpoint_returns_formatted_table(client, monkeypatch):
+    event = k8s.CoreV1Event(
+        metadata=k8s.V1ObjectMeta(name="ev-1"),
+        involved_object=k8s.V1ObjectReference(kind="ConfigMap", name="my-cm"),
+        type="Normal",
+        reason="Updated",
+        message="ConfigMap updated",
+    )
+    monkeypatch.setattr(
+        routes_resource_module,
+        "get_resource_events",
+        lambda mgr, context, namespace, kind, name: [event],
+    )
+
+    res = client.get(
+        "/api/resource-events",
+        params={"kind": "ConfigMap", "name": "my-cm", "namespace": "ns"},
+    )
+
+    assert res.status_code == 200
+    text = res.json()["events"]
+    assert "Updated" in text
+    assert "ConfigMap updated" in text
+
+
+def test_resource_events_endpoint_maps_resource_access_error(client, monkeypatch):
+    def _raise(mgr, context, namespace, kind, name):
+        raise ResourceAccessError("Event", 403, "Forbidden")
+
+    monkeypatch.setattr(routes_resource_module, "get_resource_events", _raise)
+
+    res = client.get(
+        "/api/resource-events", params={"kind": "ConfigMap", "name": "x", "namespace": "ns"}
+    )
 
     assert res.status_code == 403
 

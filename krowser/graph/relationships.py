@@ -386,6 +386,33 @@ def link_endpointslice_to_pods(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_hpa_to_target(world: World) -> list[GraphEdge]:
+    """An HPA references its scale target via spec.scaleTargetRef
+    {kind, name}, not an ownerReference. Looked up generically over whatever
+    kind is actually present in `world` (Deployment/StatefulSet today)
+    rather than hardcoding either, so this keeps working unmodified if a
+    future expansion ever fetches a third scalable kind."""
+    by_kind_key = {
+        (kind, obj.metadata.namespace, obj.metadata.name): obj
+        for kind, objs in world.items()
+        for obj in objs
+    }
+    edges = []
+    for hpa in world.get("HorizontalPodAutoscaler", []):
+        ref = hpa.spec.scale_target_ref
+        target = by_kind_key.get((ref.kind, hpa.metadata.namespace, ref.name))
+        if target:
+            edges.append(
+                GraphEdge(
+                    id=f"scales:{hpa.metadata.uid}:{target.metadata.uid}",
+                    source=hpa.metadata.uid,
+                    target=target.metadata.uid,
+                    relation="scales",
+                )
+            )
+    return edges
+
+
 LINKERS = [
     link_owner_references,
     link_ingress_to_services,
@@ -401,6 +428,7 @@ LINKERS = [
     link_clusterrolebinding_to_clusterrole,
     link_rolebinding_to_serviceaccount_subjects,
     link_clusterrolebinding_to_serviceaccount_subjects,
+    link_hpa_to_target,
 ]
 
 

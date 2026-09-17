@@ -89,6 +89,9 @@ class KubeClientManager:
     def rbac_authorization_v1(self, context: str | None) -> k8s_client.RbacAuthorizationV1Api:
         return k8s_client.RbacAuthorizationV1Api(self.api_client_for(context))
 
+    def autoscaling_v2(self, context: str | None) -> k8s_client.AutoscalingV2Api:
+        return k8s_client.AutoscalingV2Api(self.api_client_for(context))
+
     # Scoped specifically to krowser.k8s.metrics (the metrics.k8s.io Metrics
     # API has no dedicated typed client) -- not a reintroduction of the
     # general CRD-browsing surface that was deliberately removed.

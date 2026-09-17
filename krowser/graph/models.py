@@ -3,9 +3,19 @@ from typing import Literal
 from pydantic import BaseModel
 
 Health = Literal["healthy", "progressing", "degraded", "suspended", "unknown"]
-BadgeVariant = Literal["age", "status", "ready", "namespace", "misc", "metrics"]
+BadgeVariant = Literal["age", "status", "ready", "namespace", "misc", "metrics", "warning"]
 Relation = Literal[
-    "owns", "routes-to", "claims", "binds", "uses", "exposes", "targets", "runs-on", "runs-as", "grants"
+    "owns",
+    "routes-to",
+    "claims",
+    "binds",
+    "uses",
+    "exposes",
+    "targets",
+    "runs-on",
+    "runs-as",
+    "grants",
+    "scales",
 ]
 
 

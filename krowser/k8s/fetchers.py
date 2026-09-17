@@ -158,6 +158,19 @@ def list_ingresses(mgr: KubeClientManager, context: str | None, namespace: str |
     return _call("Ingress", api.list_ingress_for_all_namespaces)
 
 
+def list_horizontal_pod_autoscalers(
+    mgr: KubeClientManager, context: str | None, namespace: str | None
+) -> list[Any]:
+    api = mgr.autoscaling_v2(context)
+    if namespace:
+        return _call(
+            "HorizontalPodAutoscaler", api.list_namespaced_horizontal_pod_autoscaler, namespace
+        )
+    return _call(
+        "HorizontalPodAutoscaler", api.list_horizontal_pod_autoscaler_for_all_namespaces
+    )
+
+
 class _RawJsonResponse:
     """Minimal stand-in for a urllib3 HTTPResponse: ApiClient.deserialize only
     ever reads `.data`."""
@@ -218,4 +231,5 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "CronJob": list_cron_jobs,
     "Ingress": list_ingresses,
     "EndpointSlice": list_endpoint_slices,
+    "HorizontalPodAutoscaler": list_horizontal_pod_autoscalers,
 }

@@ -14,7 +14,7 @@ ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
     "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
-    "ClusterRoleBinding",
+    "ClusterRoleBinding", "HorizontalPodAutoscaler",
 ]
 
 

@@ -69,6 +69,12 @@ def _describe_pod(
     usage = (pod_metrics or {}).get((obj.metadata.namespace, obj.metadata.name))
     if usage:
         badges.append(Badge(text=format_usage(usage), variant="metrics"))
+    restart_count = sum(cs.restart_count for cs in container_statuses) + sum(
+        cs.restart_count for cs in (obj.status.init_container_statuses or [])
+    )
+    if restart_count:
+        label = f"{restart_count} restart{'s' if restart_count != 1 else ''}"
+        badges.append(Badge(text=label, variant="warning"))
     return health, status_label, ready, badges
 
 
@@ -142,6 +148,33 @@ def _describe_cron_job(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
         last_run, _ = humanize_age(obj.status.last_schedule_time)
         badges.append(Badge(text=f"last run {last_run} ago", variant="misc"))
     return health, status_label, None, badges
+
+
+def _describe_hpa(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    min_replicas = obj.spec.min_replicas if obj.spec.min_replicas is not None else 1
+    max_replicas = obj.spec.max_replicas or 0
+    current = obj.status.current_replicas
+    desired = obj.status.desired_replicas
+    conditions = obj.status.conditions or []
+    scaling_active = next((c for c in conditions if c.type == "ScalingActive"), None)
+
+    if scaling_active is not None and scaling_active.status == "False":
+        health: Health = "degraded"
+        status_label = scaling_active.reason or "Unable to scale"
+    elif current is None:
+        health = "progressing"
+        status_label = "Pending"
+    else:
+        health = "healthy"
+        status_label = "Active"
+
+    ready = f"{current if current is not None else '?'}/{desired if desired is not None else '?'}"
+    badges = [
+        Badge(text=status_label, variant="status"),
+        Badge(text=ready, variant="ready"),
+        Badge(text=f"min {min_replicas} · max {max_replicas}", variant="misc"),
+    ]
+    return health, status_label, ready, badges
 
 
 def _describe_service(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
@@ -334,6 +367,7 @@ _DESCRIBERS = {
     "RoleBinding": _describe_role_binding,
     "ClusterRoleBinding": _describe_role_binding,
     "EndpointSlice": _describe_endpoint_slice,
+    "HorizontalPodAutoscaler": _describe_hpa,
 }
 
 

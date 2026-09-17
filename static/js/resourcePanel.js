@@ -34,6 +34,7 @@ function resourcePanel() {
     yamlText: '',
     treeHtml: '',
     describeSections: [],
+    eventsText: '',
     logsText: '',
     logFilter: '',
     execCommand: '',
@@ -125,6 +126,7 @@ function resourcePanel() {
         this.yamlText = '';
         this.treeHtml = '';
         this.describeSections = [];
+        this.eventsText = '';
         this.logsText = '';
         this.logFilter = '';
         this.error = null;
@@ -199,6 +201,15 @@ function resourcePanel() {
           });
           if (requestId !== this.requestSeq) return;
           this.describeSections = res.sections;
+        } else if (this.viewMode === 'events') {
+          const res = await api.getResourceEvents({
+            kind: selected.kind,
+            namespace: selected.namespace,
+            name: selected.name,
+            context: this.$store.app.context,
+          });
+          if (requestId !== this.requestSeq) return;
+          this.eventsText = res.events;
         } else if (this.viewMode === 'logs') {
           const res = await api.getPodLogs({
             namespace: selected.namespace,
@@ -228,6 +239,7 @@ function resourcePanel() {
         this.yamlText = '';
         this.treeHtml = '';
         this.describeSections = [];
+        this.eventsText = '';
         this.logsText = '';
       } finally {
         if (requestId === this.requestSeq) this.setLoading(false);

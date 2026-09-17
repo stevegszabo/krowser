@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.k8s.client import KubeClientManager
-from krowser.k8s.getters import GETTERS_BY_KIND, get_pod_events, get_pod_logs
-from krowser.k8s.pod_describe import describe_pod
+from krowser.k8s.getters import GETTERS_BY_KIND, get_pod_logs, get_resource_events
+from krowser.k8s.pod_describe import describe_pod, format_events
 from krowser.kubescape_scan import scan_workload
 from krowser.vuln_scan import scan_image
 
@@ -44,12 +44,29 @@ def get_pod_describe(
 ):
     try:
         pod = GETTERS_BY_KIND["Pod"](mgr, context, namespace, name)
-        events = get_pod_events(mgr, context, namespace, name)
+        events = get_resource_events(mgr, context, namespace, "Pod", name)
         sections = describe_pod(pod, events)
     except Exception as exc:
         raise to_http_exception(exc) from exc
 
     return {"sections": sections}
+
+
+@router.get("/resource-events")
+def get_resource_events_route(
+    kind: str,
+    name: str,
+    namespace: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    try:
+        events = get_resource_events(mgr, context, namespace, kind, name)
+        text = "\n".join(format_events(events))
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"events": text}
 
 
 @router.get("/pod-logs")

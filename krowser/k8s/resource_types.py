@@ -42,6 +42,7 @@ ICONS_BY_KIND.setdefault("Role", "role")
 ICONS_BY_KIND.setdefault("RoleBinding", "rolebinding")
 ICONS_BY_KIND.setdefault("ClusterRole", "clusterrole")
 ICONS_BY_KIND.setdefault("ClusterRoleBinding", "clusterrolebinding")
+ICONS_BY_KIND.setdefault("HorizontalPodAutoscaler", "hpa")
 
 
 class UnknownResourceTypeError(KeyError):

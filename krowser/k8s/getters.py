@@ -17,16 +17,21 @@ def get_pod(mgr: KubeClientManager, context: str | None, namespace: str, name: s
     return _get("Pod", mgr.core_v1(context).read_namespaced_pod, name, namespace)
 
 
-def get_pod_events(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> list[Any]:
-    # Matches kubectl's own approach: filter by involvedObject.name/namespace,
-    # not uid, so this can't distinguish a deleted-and-recreated same-named
-    # pod's events from the current one -- kubectl describe has this same
-    # limitation.
+def get_resource_events(
+    mgr: KubeClientManager, context: str | None, namespace: str, kind: str, name: str
+) -> list[Any]:
+    # Matches kubectl's own approach: filter by involvedObject fields, not
+    # uid, so this can't distinguish a deleted-and-recreated same-named
+    # resource's events from the current one -- kubectl describe has this
+    # same limitation. Filtering on kind as well as name (not just name, as
+    # this used to before generalizing beyond Pods) avoids matching events
+    # for an unrelated resource of a different kind that happens to share a
+    # name in the same namespace.
     events = _get(
         "Event",
         mgr.core_v1(context).list_namespaced_event,
         namespace,
-        field_selector=f"involvedObject.name={name}",
+        field_selector=f"involvedObject.name={name},involvedObject.kind={kind}",
     )
     return events.items
 
@@ -133,6 +138,17 @@ def get_endpoint_slice(mgr: KubeClientManager, context: str | None, namespace: s
     )
 
 
+def get_horizontal_pod_autoscaler(
+    mgr: KubeClientManager, context: str | None, namespace: str, name: str
+) -> Any:
+    return _get(
+        "HorizontalPodAutoscaler",
+        mgr.autoscaling_v2(context).read_namespaced_horizontal_pod_autoscaler,
+        name,
+        namespace,
+    )
+
+
 # Kind name -> single-object getter, mirroring FETCHERS_BY_KIND in fetchers.py.
 # Takes (mgr, context, namespace, name); PersistentVolume is cluster-scoped so
 # it's wrapped to accept (and ignore) a namespace arg for a uniform call signature.
@@ -157,4 +173,5 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "CronJob": get_cron_job,
     "Ingress": get_ingress,
     "EndpointSlice": get_endpoint_slice,
+    "HorizontalPodAutoscaler": get_horizontal_pod_autoscaler,
 }

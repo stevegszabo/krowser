@@ -5,6 +5,7 @@ from krowser.graph.relationships import (
     link_clusterrolebinding_to_clusterrole,
     link_clusterrolebinding_to_serviceaccount_subjects,
     link_endpointslice_to_pods,
+    link_hpa_to_target,
     link_ingress_to_services,
     link_owner_references,
     link_pod_to_configmap,
@@ -511,3 +512,29 @@ def test_multiple_bindings_to_same_shared_clusterrole_each_get_a_grants_edge(
         ("crb-1", "cr-1", "grants"),
         ("crb-2", "cr-1", "grants"),
     }
+
+
+def test_link_hpa_to_deployment_target(make_hpa, make_deployment):
+    hpa = make_hpa("hpa-1", "web", scale_target_kind="Deployment", scale_target_name="web")
+    deploy = make_deployment("dep-1", "web")
+
+    edges = link_hpa_to_target({"HorizontalPodAutoscaler": [hpa], "Deployment": [deploy]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("hpa-1", "dep-1", "scales")]
+
+
+def test_link_hpa_to_statefulset_target(make_hpa, make_stateful_set):
+    hpa = make_hpa("hpa-1", "cache", scale_target_kind="StatefulSet", scale_target_name="cache")
+    sts = make_stateful_set("sts-1", "cache")
+
+    edges = link_hpa_to_target({"HorizontalPodAutoscaler": [hpa], "StatefulSet": [sts]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("hpa-1", "sts-1", "scales")]
+
+
+def test_link_hpa_to_target_no_match_is_silent(make_hpa):
+    hpa = make_hpa("hpa-1", "web", scale_target_kind="Deployment", scale_target_name="nope")
+
+    edges = link_hpa_to_target({"HorizontalPodAutoscaler": [hpa], "Deployment": []})
+
+    assert edges == []

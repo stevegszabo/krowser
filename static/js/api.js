@@ -29,6 +29,7 @@ const api = {
   getGraph: (params) => apiGet('/api/graph', params),
   getResourceYaml: (params) => apiGet('/api/resource-yaml', params),
   getPodDescribe: (params) => apiGet('/api/pod-describe', params),
+  getResourceEvents: (params) => apiGet('/api/resource-events', params),
   getPodLogs: (params) => apiGet('/api/pod-logs', params),
   getPodVulnScan: (params) => apiGet('/api/pod-vulnscan', params),
   getWorkloadKubescan: (params) => apiGet('/api/workload-kubescan', params),

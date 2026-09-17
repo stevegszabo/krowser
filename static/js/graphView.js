@@ -9,6 +9,7 @@ const RELATION_LABEL = {
   'runs-on': 'runs on',
   'runs-as': 'runs as',
   grants: 'grants',
+  scales: 'scales',
 };
 
 // Kubescape's "scan workload" refuses to scan a Pod that has an owner (which
@@ -128,9 +129,9 @@ function graphView() {
         // window. Pod nodes get four extra rows (Get pod logs, Get pod
         // description, Execute command, Scan for vulnerabilities); workload
         // controller kinds get one extra row (Scan with Kubescape); both are
-        // on top of the universal "Get <kind>" row.
+        // on top of the two universal rows ("Get <kind>" and "Get events").
         const itemCount =
-          1 + (data.kind === 'Pod' ? 4 : 0) + (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0);
+          2 + (data.kind === 'Pod' ? 4 : 0) + (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0);
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -321,6 +322,37 @@ function graphView() {
       return { x: this.$refs.canvas.clientWidth / 2, y: this.$refs.canvas.clientHeight / 2 };
     },
 
+    // Cytoscape's own png()/jpg() export only rasterizes what's drawn on its
+    // <canvas> -- every card's actual content (icon, title, badges) is a
+    // separate HTML overlay (see cytoscape-node-html-label in init(), and
+    // 'background-opacity': 0 on the node style above), so a plain cy.png()
+    // export produces only bare edges on blank space. html2canvas rasterizes
+    // the composited canvas+DOM together, matching what's actually on screen.
+    async exportImage() {
+      if (!this.cy.elements().length) return;
+      const bg = getComputedStyle(document.documentElement).getPropertyValue('--page-bg').trim();
+      const canvas = await html2canvas(this.$refs.canvas, { backgroundColor: bg, scale: 2 });
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = this.exportFilename();
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    },
+
+    exportFilename() {
+      const store = this.$store.app;
+      const typeSlug = (store.selectedType || 'graph').replace(/\//g, '-');
+      const namespace = store.namespace || 'all-namespaces';
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      return `krowser-${typeSlug}-${namespace}-${stamp}.png`;
+    },
+
     togglePan() {
       this.panMode = !this.panMode;
       this.cy.userPanningEnabled(this.panMode);
@@ -336,6 +368,12 @@ function graphView() {
     describeFromContextMenu() {
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'describe' };
+      this.contextMenu.visible = false;
+    },
+
+    eventsFromContextMenu() {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'events' };
       this.contextMenu.visible = false;
     },
 

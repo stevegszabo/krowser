@@ -222,7 +222,7 @@ def _fmt_tolerations(tolerations: list[Any] | None) -> str:
     return "\n".join(f"{_pad('', _LABEL_WIDTH)}{p}" if i else p for i, p in enumerate(parts))
 
 
-def _fmt_events(events: list[Any]) -> list[str]:
+def format_events(events: list[Any]) -> list[str]:
     if not events:
         return ["<none>"]
 
@@ -301,6 +301,6 @@ def describe_pod(pod: Any, events: list[Any]) -> list[dict[str, str]]:
 
     sections.append({"title": "Conditions", "text": "\n".join(_fmt_conditions(getattr(status, "conditions", None)))})
     sections.append({"title": "Volumes", "text": "\n".join(_fmt_volumes(spec.volumes))})
-    sections.append({"title": "Events", "text": "\n".join(_fmt_events(events))})
+    sections.append({"title": "Events", "text": "\n".join(format_events(events))})
 
     return sections

@@ -340,8 +340,9 @@ html, body {
   justify-content: center;
   color: var(--ink-soft);
 }
-.krw-toolbar button:hover { background: var(--hover-bg); color: var(--teal-dark); }
+.krw-toolbar button:hover:not(:disabled) { background: var(--hover-bg); color: var(--teal-dark); }
 .krw-toolbar button.active { background: var(--active-bg); color: var(--teal-dark); }
+.krw-toolbar button:disabled { opacity: 0.5; cursor: default; }
 .krw-toolbar svg { width: 16px; height: 16px; }
 
 .krw-zoom-pct {
@@ -514,6 +515,7 @@ html, body {
 .krw-badge-medium { background: var(--badge-medium-bg); color: var(--badge-medium-fg); }
 .krw-badge-low { background: var(--badge-low-bg); color: var(--ink-soft); }
 .krw-badge-unknown { background: var(--badge-low-bg); color: var(--ink-soft); }
+.krw-badge-warning { background: var(--warn-bg); color: var(--warn-fg); }
 
 /* Resource detail pane */
 .krw-detail-pane {

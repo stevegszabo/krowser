@@ -78,6 +78,23 @@ def make_deployment():
 
 
 @pytest.fixture
+def make_stateful_set():
+    def _make(uid, name, namespace="ns", replicas=1, ready_replicas=1):
+        return k8s.V1StatefulSet(
+            metadata=_meta(uid, name, namespace),
+            spec=k8s.V1StatefulSetSpec(
+                replicas=replicas,
+                selector=k8s.V1LabelSelector(),
+                template=k8s.V1PodTemplateSpec(),
+                service_name=name,
+            ),
+            status=k8s.V1StatefulSetStatus(replicas=replicas, ready_replicas=ready_replicas),
+        )
+
+    return _make
+
+
+@pytest.fixture
 def make_replica_set():
     def _make(uid, name, namespace="ns", owner_refs=None, replicas=1, ready_replicas=1):
         return k8s.V1ReplicaSet(
@@ -317,6 +334,39 @@ def make_cluster_role_binding():
             metadata=_meta(uid, name, namespace=None),
             role_ref=k8s.V1RoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=role_name or name),
             subjects=subjects if subjects is not None else [k8s.RbacV1Subject(kind="User", name="alice")],
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_hpa():
+    def _make(
+        uid,
+        name,
+        namespace="ns",
+        min_replicas=1,
+        max_replicas=5,
+        current_replicas=1,
+        desired_replicas=1,
+        scale_target_kind="Deployment",
+        scale_target_name=None,
+        conditions=None,
+    ):
+        return k8s.V2HorizontalPodAutoscaler(
+            metadata=_meta(uid, name, namespace),
+            spec=k8s.V2HorizontalPodAutoscalerSpec(
+                min_replicas=min_replicas,
+                max_replicas=max_replicas,
+                scale_target_ref=k8s.V2CrossVersionObjectReference(
+                    kind=scale_target_kind, name=scale_target_name or name
+                ),
+            ),
+            status=k8s.V2HorizontalPodAutoscalerStatus(
+                current_replicas=current_replicas,
+                desired_replicas=desired_replicas,
+                conditions=conditions or [],
+            ),
         )
 
     return _make
