@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from kubernetes import client as k8s
 
-from krowser.k8s.pod_describe import describe_pod
+from krowser.k8s.pod_describe import describe_pod, format_events
 
 
 def _meta(name="web-1", namespace="ns", labels=None, annotations=None, owner_refs=None):
@@ -165,6 +165,25 @@ def test_describe_pod_volumes_section():
 def test_describe_pod_no_events_shows_none():
     text = _section(describe_pod(_full_pod(), []), "Events")
     assert text == "<none>"
+
+
+def test_format_events_handles_missing_source_and_reporting_component():
+    # Regression test: a real cluster event (e.g. a Node's "Starting"
+    # kubelet event) can have both `source` and `reporting_component`
+    # unset (None, not ""), which used to crash _pad's len(None) check.
+    event = k8s.CoreV1Event(
+        metadata=k8s.V1ObjectMeta(name="evt-starting"),
+        involved_object=k8s.V1ObjectReference(kind="Node", name="worker-1"),
+        reason="Starting",
+        message="Starting kubelet.",
+        type="Normal",
+        last_timestamp=datetime.now(timezone.utc),
+    )
+
+    text = "\n".join(format_events([event]))
+
+    assert "Starting" in text
+    assert "Starting kubelet." in text
 
 
 def test_describe_pod_events_sorted_and_counted():

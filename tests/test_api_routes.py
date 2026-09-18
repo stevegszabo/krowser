@@ -152,6 +152,48 @@ def test_resource_yaml_maps_resource_access_error(client, monkeypatch):
     assert res.status_code == 403
 
 
+# Serves the same YAML as /resource-yaml, but as a real file response (not a
+# client-side blob: URL) so the browser handles it as an ordinary same-origin
+# download -- see downloadYaml() in resourcePanel.js.
+def test_resource_yaml_download_returns_attachment(client, monkeypatch, make_pod):
+    pod = make_pod("pod-1", "web-abc", namespace="ns")
+    pod.kind = "Pod"
+    pod.api_version = "v1"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND, "Pod", lambda mgr, context, namespace, name: pod
+    )
+
+    res = client.get(
+        "/api/resource-yaml-download", params={"kind": "Pod", "name": "web-abc", "namespace": "ns"}
+    )
+
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/x-yaml")
+    disposition = res.headers["content-disposition"]
+    assert disposition.startswith("attachment;")
+    assert "krowser-pod-ns-web-abc-" in disposition
+    assert "kind: Pod" in res.text
+    assert "name: web-abc" in res.text
+
+
+def test_resource_yaml_download_unknown_kind_is_404(client):
+    res = client.get("/api/resource-yaml-download", params={"kind": "Bogus", "name": "x"})
+    assert res.status_code == 404
+
+
+def test_resource_yaml_download_maps_resource_access_error(client, monkeypatch):
+    def _raise(mgr, context, namespace, name):
+        raise ResourceAccessError("Pod", 403, "Forbidden")
+
+    monkeypatch.setitem(routes_resource_module.GETTERS_BY_KIND, "Pod", _raise)
+
+    res = client.get(
+        "/api/resource-yaml-download", params={"kind": "Pod", "name": "x", "namespace": "ns"}
+    )
+
+    assert res.status_code == 403
+
+
 def test_pod_describe_returns_sections(client, monkeypatch, make_pod):
     pod = make_pod("pod-1", "web-abc", namespace="ns")
     monkeypatch.setitem(
@@ -205,9 +247,35 @@ def test_resource_events_endpoint_returns_formatted_table(client, monkeypatch):
     )
 
     assert res.status_code == 200
-    text = res.json()["events"]
-    assert "Updated" in text
-    assert "ConfigMap updated" in text
+    rows = res.json()["events"]
+    assert len(rows) == 1
+    assert rows[0]["reason"] == "Updated"
+    assert rows[0]["message"] == "ConfigMap updated"
+
+
+def test_resource_events_endpoint_supports_cluster_scoped_kind(client, monkeypatch):
+    # Regression test: ClusterRole (and other cluster-scoped kinds) have no
+    # namespace, so the frontend omits the param entirely -- this used to
+    # 422 because `namespace` was a required field on the route.
+    event = k8s.CoreV1Event(
+        metadata=k8s.V1ObjectMeta(name="ev-1"),
+        involved_object=k8s.V1ObjectReference(kind="ClusterRole", name="my-role"),
+        type="Normal",
+        reason="Created",
+        message="ClusterRole created",
+    )
+    monkeypatch.setattr(
+        routes_resource_module,
+        "get_resource_events",
+        lambda mgr, context, namespace, kind, name: [event] if namespace is None else [],
+    )
+
+    res = client.get("/api/resource-events", params={"kind": "ClusterRole", "name": "my-role"})
+
+    assert res.status_code == 200
+    rows = res.json()["events"]
+    assert len(rows) == 1
+    assert rows[0]["message"] == "ClusterRole created"
 
 
 def test_resource_events_endpoint_maps_resource_access_error(client, monkeypatch):

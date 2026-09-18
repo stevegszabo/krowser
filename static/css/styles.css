@@ -360,6 +360,20 @@ html, body {
   margin: 0 2px;
 }
 
+.krw-graph-filter-input {
+  width: 120px;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--card-bg);
+  color: var(--ink);
+}
+.krw-graph-filter-input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
 /* Overlay states */
 .krw-overlay-center {
   position: absolute;
@@ -695,6 +709,15 @@ html, body {
   flex-shrink: 0;
 }
 
+.krw-yaml-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
 .krw-vulnscan {
   padding: 14px;
 }
@@ -869,6 +892,39 @@ html, body {
   line-height: 1.5;
   color: var(--ink);
   white-space: pre;
+}
+
+.krw-detail-table {
+  padding: 14px;
+}
+.krw-detail-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.krw-detail-table th {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.krw-detail-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  vertical-align: top;
+}
+.krw-detail-table tr:last-child td {
+  border-bottom: none;
+}
+.krw-detail-table tbody tr:nth-child(even) {
+  background: var(--zebra-bg);
+}
+.krw-rules-verb {
+  display: inline-block;
+  margin: 1px 3px 1px 0;
 }
 
 .krw-logs {

@@ -133,6 +133,14 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="7"/><path d="M21 21l-5.5-5.5M10 7v6M7 10h6"/></svg>
           </button>
           <div class="krw-toolbar-sep"></div>
+          <input
+            type="text"
+            class="krw-graph-filter-input"
+            x-model="$store.app.filterText"
+            placeholder="Filter..."
+            title="Filter resources by name"
+          />
+          <div class="krw-toolbar-sep"></div>
           <button
             @click="exportImage()"
             :disabled="!$store.app.graph || $store.app.graph.nodes.length === 0"
@@ -161,6 +169,12 @@
         <template x-if="!$store.app.loading && $store.app.graph && $store.app.graph.nodes.length === 0">
           <div class="krw-overlay-center">
             <div class="krw-empty-state">No matching resources found.</div>
+          </div>
+        </template>
+
+        <template x-if="$store.app.filterText.trim() && hasNoFilterMatches">
+          <div class="krw-overlay-center">
+            <div class="krw-empty-state" x-text="'No resources match &quot;' + $store.app.filterText.trim() + '&quot;.'"></div>
           </div>
         </template>
 
@@ -274,6 +288,13 @@
             </div>
             <button class="krw-detail-close" @click="close()" title="Close">&times;</button>
           </div>
+          <template x-if="viewMode === 'yaml'">
+            <div class="krw-yaml-toolbar">
+              <button class="krw-exec-run-btn" @click="copyYaml()" :disabled="!yamlText">Copy</button>
+              <button class="krw-exec-run-btn" @click="downloadYaml()" :disabled="!yamlText">Download</button>
+              <span class="krw-exec-status" x-show="yamlCopyStatus" x-text="yamlCopyStatus"></span>
+            </div>
+          </template>
           <template x-if="viewMode === 'logs'">
             <div class="krw-log-toolbar">
               <input
@@ -325,8 +346,41 @@
             <template x-if="error">
               <div class="krw-detail-message krw-detail-error" x-text="error"></div>
             </template>
-            <template x-if="!loading && !error && viewMode === 'yaml'">
+            <template x-if="!loading && !error && viewMode === 'yaml' && rulesTable === null">
               <div class="krw-yaml-tree" x-html="treeHtml" @click="handleTreeClick($event)"></div>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'yaml' && rulesTable !== null">
+              <div class="krw-detail-table">
+                <template x-if="rulesTable.length === 0">
+                  <div class="krw-detail-message">No rules defined.</div>
+                </template>
+                <template x-if="rulesTable.length > 0">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>API Groups</th>
+                        <th>Resources</th>
+                        <th>Resource Names</th>
+                        <th>Verbs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="(rule, idx) in rulesTable" :key="idx">
+                        <tr>
+                          <td x-text="(rule.apiGroups || []).map(g => g === '' ? 'core' : g).join(', ') || '—'"></td>
+                          <td x-text="(rule.resources && rule.resources.length) ? rule.resources.join(', ') : ((rule.nonResourceURLs && rule.nonResourceURLs.length) ? rule.nonResourceURLs.join(', ') : '—')"></td>
+                          <td x-text="(rule.resourceNames && rule.resourceNames.length) ? rule.resourceNames.join(', ') : '—'"></td>
+                          <td>
+                            <template x-for="verb in (rule.verbs || [])" :key="verb">
+                              <span class="krw-badge krw-rules-verb" x-text="verb"></span>
+                            </template>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </template>
+              </div>
             </template>
             <template x-if="!loading && !error && viewMode === 'describe'">
               <div>
@@ -339,7 +393,35 @@
               </div>
             </template>
             <template x-if="!loading && !error && viewMode === 'events'">
-              <pre class="krw-describe" x-text="eventsText"></pre>
+              <div class="krw-detail-table">
+                <template x-if="eventsRows.length === 0">
+                  <div class="krw-detail-message">No events found.</div>
+                </template>
+                <template x-if="eventsRows.length > 0">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Reason</th>
+                        <th>Age</th>
+                        <th>From</th>
+                        <th>Message</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="(row, idx) in eventsRows" :key="idx">
+                        <tr>
+                          <td x-text="row.type || '—'"></td>
+                          <td x-text="row.reason || '—'"></td>
+                          <td x-text="row.age || '—'"></td>
+                          <td x-text="row.from || '—'"></td>
+                          <td x-text="row.message"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </template>
+              </div>
             </template>
             <template x-if="!loading && !error && viewMode === 'logs'">
               <pre class="krw-logs" x-html="filteredLogsHtml"></pre>

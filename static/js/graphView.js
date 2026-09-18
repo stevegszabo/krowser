@@ -43,6 +43,7 @@ function graphView() {
     isInitialRender: true,
     contextMenu: { visible: false, x: 0, y: 0, resource: null },
     hoveredNode: null,
+    hasNoFilterMatches: false,
 
     init() {
       this.cy = cytoscape({
@@ -85,7 +86,11 @@ function graphView() {
 
       this.cy.nodeHtmlLabel([
         {
-          query: 'node',
+          // ':visible' (not just 'node') so a node hidden via
+          // style('display', 'none') -- see applyFilter() -- drops its HTML
+          // overlay too; the plugin listens for 'style' events and re-checks
+          // this query, removing/re-adding the overlay div as it changes.
+          query: 'node:visible',
           halign: 'center',
           valign: 'center',
           halignBox: 'center',
@@ -211,6 +216,8 @@ function graphView() {
 
       this.$watch('$store.app.graph', (graph) => this.renderGraph(graph));
       this.renderGraph(this.$store.app.graph);
+
+      this.$watch('$store.app.filterText', () => this.applyFilter());
     },
 
     reapplySelectionHighlight() {
@@ -275,13 +282,21 @@ function graphView() {
       this.cy.add(elements);
       this.reapplySelectionHighlight();
       this.runLayout(selectionChanged ? undefined : { pan, zoom });
+      // Freshly added elements default to visible -- only worth re-filtering
+      // (and re-fitting to the filtered subset) when a filter is actually
+      // active; otherwise skip entirely so the pan/zoom preservation above
+      // isn't immediately overridden by a fit-to-everything call.
+      if (this.$store.app.filterText.trim()) this.applyFilter();
     },
 
-    runLayout(preservedView) {
+    // Runs on `eles` (default: the whole graph) so a filtered subset can be
+    // re-laid-out and tightened up on its own, independent of the full set.
+    runLayout(preservedView, eles) {
+      const collection = eles || this.cy.elements();
       // Unconnected graphs (e.g. PersistentVolumes, which have no edges) fall
       // into a single dagre rank and get laid out as one very tall column,
       // forcing a tiny fit-to-screen zoom. A grid reads far better for those.
-      const hasEdges = this.cy.edges().length > 0;
+      const hasEdges = collection.edges().length > 0;
       // Nodes fan out to potentially dozens of pods each; with the default
       // left-to-right rank direction those pods (all one rank) stack into a
       // single tall vertical column. Ranking top-to-bottom instead spreads
@@ -290,7 +305,7 @@ function graphView() {
       const layout = hasEdges
         ? { name: 'dagre', rankDir: isNodesView ? 'TB' : 'LR', nodeSep: 24, rankSep: 90, animate: false }
         : { name: 'grid', condense: true, avoidOverlapPadding: 24, animate: false };
-      this.cy.layout(layout).run();
+      collection.layout(layout).run();
       if (preservedView) {
         // Order matters: cytoscape's zoom(level) setter can itself shift pan
         // to keep the viewport centered, so set zoom first and pan last to
@@ -301,7 +316,7 @@ function graphView() {
         this.cy.zoom(1);
         this.cy.center();
       } else {
-        this.cy.fit(undefined, 40);
+        this.cy.fit(eles, 40);
       }
       this.isInitialRender = false;
     },
@@ -320,6 +335,32 @@ function graphView() {
 
     centerPoint() {
       return { x: this.$refs.canvas.clientWidth / 2, y: this.$refs.canvas.clientHeight / 2 };
+    },
+
+    // Hides nodes/edges that don't match $store.app.filterText (lives in the
+    // shared store, not here, so it's deep-linkable -- see app.js's
+    // syncUrl()). Matches keep their immediate neighbors visible too (rather
+    // than their whole connected component), since many views funnel
+    // everything through one shared node (e.g. a namespace) -- full BFS
+    // would keep that entire component and make the filter a no-op. The
+    // kept subset is then re-laid-out on its own (not just re-fit) so it
+    // tightens up into the freed space instead of sitting wherever it
+    // happened to land in the full graph.
+    applyFilter() {
+      if (!this.cy) return;
+      const query = this.$store.app.filterText.trim().toLowerCase();
+      if (!query) {
+        this.hasNoFilterMatches = false;
+        this.cy.elements().style('display', 'element');
+        this.runLayout();
+        return;
+      }
+      const matches = this.cy.nodes().filter((n) => (n.data('name') || '').toLowerCase().includes(query));
+      const keep = matches.closedNeighborhood();
+      this.hasNoFilterMatches = matches.empty();
+      this.cy.elements().style('display', 'none');
+      keep.style('display', 'element');
+      if (!matches.empty()) this.runLayout(undefined, keep);
     },
 
     // Cytoscape's own png()/jpg() export only rasterizes what's drawn on its

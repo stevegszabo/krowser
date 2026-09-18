@@ -18,7 +18,7 @@ def get_pod(mgr: KubeClientManager, context: str | None, namespace: str, name: s
 
 
 def get_resource_events(
-    mgr: KubeClientManager, context: str | None, namespace: str, kind: str, name: str
+    mgr: KubeClientManager, context: str | None, namespace: str | None, kind: str, name: str
 ) -> list[Any]:
     # Matches kubectl's own approach: filter by involvedObject fields, not
     # uid, so this can't distinguish a deleted-and-recreated same-named
@@ -27,12 +27,15 @@ def get_resource_events(
     # this used to before generalizing beyond Pods) avoids matching events
     # for an unrelated resource of a different kind that happens to share a
     # name in the same namespace.
-    events = _get(
-        "Event",
-        mgr.core_v1(context).list_namespaced_event,
-        namespace,
-        field_selector=f"involvedObject.name={name},involvedObject.kind={kind}",
-    )
+    field_selector = f"involvedObject.name={name},involvedObject.kind={kind}"
+    api = mgr.core_v1(context)
+    if namespace:
+        events = _get("Event", api.list_namespaced_event, namespace, field_selector=field_selector)
+    else:
+        # Cluster-scoped resources (ClusterRole, Node, PersistentVolume, ...)
+        # have no namespace of their own to search -- their events can land
+        # in any namespace, so this has to search all of them.
+        events = _get("Event", api.list_event_for_all_namespaces, field_selector=field_selector)
     return events.items
 
 

@@ -42,6 +42,7 @@ document.addEventListener('alpine:init', () => {
     namespace: 'default', // '' = "All namespaces"
     resourceTypes: [],
     selectedType: null,
+    filterText: '', // graph filter box text -- lives here (not in graphView.js) so it's deep-linkable, see appRoot's syncUrl()
     graph: null,
     selectedResource: null, // { id, kind, namespace, name } | null -- the highlighted tile, set by a plain click
     detailResource: null, // { id, kind, namespace, name, view } | null -- drives the detail pane; set only via the context menu
@@ -81,30 +82,105 @@ document.addEventListener('alpine:init', () => {
 
     async init() {
       const store = this.$store.app;
+      // Read once, up front -- everything below that restores from these
+      // params must finish before syncUrl() watchers are registered at the
+      // end of this method, or they'd immediately overwrite what we just read.
+      const params = new URLSearchParams(window.location.search);
+      let pendingResource = null;
+
       try {
-        // context is null here (contextsRes hasn't resolved yet); the
-        // backend already treats that as "the current context", same as
-        // every other endpoint, so this resolves to the same types list a
-        // second call with the real current-context name would.
-        const [contextsRes, typesRes] = await Promise.all([
-          api.getContexts(),
-          api.getResourceTypes(store.context),
-        ]);
+        // Contexts must resolve before resource types can be fetched with
+        // the right context: an invalid/stale ?context= from a stale link
+        // needs to fall back to the server's current context rather than
+        // be sent straight through and error the whole init.
+        const contextsRes = await api.getContexts();
         store.contexts = contextsRes.contexts;
-        store.context = contextsRes.current;
+        const requestedContext = params.get('context');
+        store.context =
+          requestedContext && contextsRes.contexts.some((c) => c.name === requestedContext)
+            ? requestedContext
+            : contextsRes.current;
+
+        const typesRes = await api.getResourceTypes(store.context);
         store.resourceTypes = typesRes.resource_types;
+        const requestedType = params.get('type');
         // Pods is selected by default on load (Workloads is pre-expanded in
         // the left-pane menu to match, see resourceList.js), falling back to
         // nothing selected if it's ever missing from the type list.
-        store.selectedType = store.resourceTypes.some((rt) => rt.id === 'workloads/pods')
-          ? 'workloads/pods'
-          : null;
+        store.selectedType =
+          requestedType && store.resourceTypes.some((rt) => rt.id === requestedType)
+            ? requestedType
+            : store.resourceTypes.some((rt) => rt.id === 'workloads/pods')
+              ? 'workloads/pods'
+              : null;
+
+        // '' (all namespaces) is a meaningful explicit choice, distinct from
+        // "no ?ns= param at all" -- has() (not the value) is what tells them apart.
+        if (params.has('ns')) store.namespace = params.get('ns');
+        if (params.has('filter')) store.filterText = params.get('filter');
+        if (params.has('resKind')) {
+          pendingResource = {
+            kind: params.get('resKind'),
+            namespace: params.get('resNs') || null,
+            name: params.get('resName'),
+          };
+        }
+
         await this.loadNamespaces();
       } catch (e) {
         store.error = e.message;
       }
       this.restartPolling();
       await this.refresh();
+
+      // Deferred until here (not resolved from params directly) since it
+      // needs to match against a real node from the graph we just fetched --
+      // the URL only carries kind/namespace/name, not the backend's
+      // internal node id, which can change if the resource is recreated.
+      if (pendingResource) this.resolveDeepLinkedResource(pendingResource);
+
+      this.$watch('$store.app.context', () => this.syncUrl());
+      this.$watch('$store.app.namespace', () => this.syncUrl());
+      this.$watch('$store.app.selectedType', () => this.syncUrl());
+      this.$watch('$store.app.selectedResource', () => this.syncUrl());
+      this.$watch('$store.app.filterText', () => this.syncUrl());
+      this.syncUrl();
+    },
+
+    // Only the plain click-to-highlight selection (selectedResource) is
+    // deep-linked, not detailResource (the right-click "Get <kind>"/logs/etc.
+    // pane) -- kept out of scope for now, see the URL-only-reflects-a-few
+    // top-level view fields the app already had.
+    resolveDeepLinkedResource(target) {
+      const store = this.$store.app;
+      if (!store.graph) return;
+      const match = store.graph.nodes.find(
+        (n) => n.kind === target.kind && n.name === target.name && (n.namespace || null) === target.namespace
+      );
+      if (match) {
+        store.selectedResource = { id: match.id, kind: match.kind, namespace: match.namespace, name: match.name };
+      }
+    },
+
+    // Keeps the URL in sync with the handful of top-level view fields, so
+    // the current view is bookmarkable/shareable. Always replaceState (never
+    // pushState) -- e.g. every filter-box keystroke would otherwise spam
+    // browser history; back/forward navigating between views isn't a goal here.
+    syncUrl() {
+      const store = this.$store.app;
+      const params = new URLSearchParams();
+      if (store.context) params.set('context', store.context);
+      if (store.namespace !== 'default') params.set('ns', store.namespace);
+      if (store.selectedType) params.set('type', store.selectedType);
+      if (store.filterText) params.set('filter', store.filterText);
+      if (store.selectedResource) {
+        params.set('resKind', store.selectedResource.kind);
+        if (store.selectedResource.namespace) params.set('resNs', store.selectedResource.namespace);
+        params.set('resName', store.selectedResource.name);
+      }
+      const qs = params.toString();
+      const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+      history.replaceState(null, '', url);
     },
 
     async loadNamespaces() {

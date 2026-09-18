@@ -4,6 +4,11 @@ const DETAIL_PANE_MIN_WIDTH = 280;
 // wide enough to meet the resource menu.
 const DETAIL_PANE_MAX_RATIO = 0.8;
 
+// These two kinds' "Get <kind>" YAML renders as a rules table instead of the
+// generic tree -- a Role/ClusterRole's `rules` array is its whole point, and
+// reads far easier as a table than nested under nine layers of YAML tree.
+const RULES_TABLE_KINDS = ['Role', 'ClusterRole'];
+
 // Builds one log line's HTML: every occurrence of `filter` (plain substring,
 // case-insensitive) wrapped in <mark>, everything else escaped as text.
 // Operates on raw text and escapes each piece as it's assembled, rather than
@@ -32,9 +37,11 @@ function highlightLogLine(line, filter) {
 function resourcePanel() {
   return {
     yamlText: '',
+    yamlCopyStatus: '',
     treeHtml: '',
+    rulesTable: null,
     describeSections: [],
-    eventsText: '',
+    eventsRows: [],
     logsText: '',
     logFilter: '',
     execCommand: '',
@@ -58,6 +65,7 @@ function resourcePanel() {
     _execTerm: null,
     _execFitAddon: null,
     _execResizeObserver: null,
+    _yamlCopyStatusTimer: null,
 
     // Only the lines matching the filter (plain, case-insensitive substring
     // match), each with its matches wrapped in <mark>. Empty filter shows
@@ -124,9 +132,11 @@ function resourcePanel() {
 
       if (!selected) {
         this.yamlText = '';
+        this.yamlCopyStatus = '';
         this.treeHtml = '';
+        this.rulesTable = null;
         this.describeSections = [];
-        this.eventsText = '';
+        this.eventsRows = [];
         this.logsText = '';
         this.logFilter = '';
         this.error = null;
@@ -143,6 +153,7 @@ function resourcePanel() {
       // different resource, so it doesn't silently carry over.
       if (selected.id !== this._lastResourceId) {
         this.logFilter = '';
+        this.yamlCopyStatus = '';
       }
       this._lastResourceId = selected.id;
 
@@ -209,7 +220,7 @@ function resourcePanel() {
             context: this.$store.app.context,
           });
           if (requestId !== this.requestSeq) return;
-          this.eventsText = res.events;
+          this.eventsRows = res.events;
         } else if (this.viewMode === 'logs') {
           const res = await api.getPodLogs({
             namespace: selected.namespace,
@@ -232,14 +243,16 @@ function resourcePanel() {
           // always starts fully expanded, independent of any .collapsed
           // classes left on the previous resource's tree DOM.
           this.treeHtml = renderYamlTree(res.data);
+          this.rulesTable = RULES_TABLE_KINDS.includes(selected.kind) ? res.data.rules || [] : null;
         }
       } catch (e) {
         if (requestId !== this.requestSeq) return;
         this.error = e.message;
         this.yamlText = '';
         this.treeHtml = '';
+        this.rulesTable = null;
         this.describeSections = [];
-        this.eventsText = '';
+        this.eventsRows = [];
         this.logsText = '';
       } finally {
         if (requestId === this.requestSeq) this.setLoading(false);
@@ -464,6 +477,66 @@ function resourcePanel() {
       const row = event.target.closest('.krw-tree-row[data-toggle]');
       if (!row) return;
       row.closest('.krw-tree-node').classList.toggle('collapsed');
+    },
+
+    // yamlText always holds the raw fetched YAML, even when rulesTable is
+    // set and the tree view is replaced by a table for RULES_TABLE_KINDS --
+    // so both buttons work regardless of which of the two the pane renders.
+    async copyYaml() {
+      if (!this.yamlText) return;
+      try {
+        // navigator.clipboard only exists in a secure context (HTTPS or
+        // localhost) -- krowser is often reached over plain HTTP via a LAN
+        // IP/hostname, where it's undefined and this throws. Fall back to
+        // the older execCommand('copy'), which works in both cases.
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(this.yamlText);
+        } else {
+          this.legacyCopyToClipboard(this.yamlText);
+        }
+        this.yamlCopyStatus = 'Copied!';
+      } catch (_) {
+        this.yamlCopyStatus = 'Copy failed';
+      }
+      clearTimeout(this._yamlCopyStatusTimer);
+      this._yamlCopyStatusTimer = setTimeout(() => {
+        this.yamlCopyStatus = '';
+      }, 1500);
+    },
+
+    legacyCopyToClipboard(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      // Off-screen but still focusable/selectable -- execCommand('copy')
+      // only works on the current selection, so it must actually be in the
+      // document and focused, not just detached in memory.
+      textarea.style.position = 'fixed';
+      textarea.style.top = '0';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (!ok) throw new Error('execCommand copy failed');
+    },
+
+    // Hits a real backend endpoint (Content-Disposition: attachment) rather
+    // than building a client-side blob: URL -- a blob download triggered
+    // from a page served over plain HTTP on a non-localhost origin gets
+    // flagged by Chrome as an "insecure download" and saved under a generic
+    // "Unconfirmed ####.crdownload" name instead of the real filename.
+    downloadYaml() {
+      if (!this.yamlText) return;
+      const selected = this.$store.app.detailResource;
+      const params = new URLSearchParams({ kind: selected.kind, name: selected.name });
+      if (selected.namespace) params.set('namespace', selected.namespace);
+      if (this.$store.app.context) params.set('context', this.$store.app.context);
+      const link = document.createElement('a');
+      link.href = `/api/resource-yaml-download?${params.toString()}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     },
 
     close() {

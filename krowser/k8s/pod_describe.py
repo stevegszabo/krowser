@@ -222,25 +222,45 @@ def _fmt_tolerations(tolerations: list[Any] | None) -> str:
     return "\n".join(f"{_pad('', _LABEL_WIDTH)}{p}" if i else p for i, p in enumerate(parts))
 
 
-def format_events(events: list[Any]) -> list[str]:
-    if not events:
-        return ["<none>"]
+def event_rows(events: list[Any]) -> list[dict[str, str]]:
+    """Sorted, formatted event rows shared by format_events (a plain-text
+    table, embedded in the Get pod description Events section) and the
+    standalone Get events view (rendered as an actual HTML table)."""
 
     def sort_key(e):
         ts = e.last_timestamp or e.first_timestamp or e.event_time
         return ts or ""
 
     ordered = sorted(events, key=sort_key)
-    lines = [f"{_pad('Type', 8)}{_pad('Reason', 20)}{_pad('Age', 10)}{_pad('From', 20)}Message"]
-    lines.append(f"{_pad('----', 8)}{_pad('------', 20)}{_pad('---', 10)}{_pad('----', 20)}-------")
+    rows = []
     for e in ordered:
         ts = e.last_timestamp or e.first_timestamp or e.event_time
         age, _ = humanize_age(ts)
         count_suffix = f" (x{e.count})" if e.count and e.count > 1 else ""
-        from_component = e.source.component if e.source else (e.reporting_component or "")
+        from_component = (e.source.component if e.source else e.reporting_component) or ""
+        rows.append(
+            {
+                "type": e.type or "",
+                "reason": e.reason or "",
+                "age": age + count_suffix,
+                "from": from_component,
+                "message": e.message or "",
+            }
+        )
+    return rows
+
+
+def format_events(events: list[Any]) -> list[str]:
+    rows = event_rows(events)
+    if not rows:
+        return ["<none>"]
+
+    lines = [f"{_pad('Type', 8)}{_pad('Reason', 20)}{_pad('Age', 10)}{_pad('From', 20)}Message"]
+    lines.append(f"{_pad('----', 8)}{_pad('------', 20)}{_pad('---', 10)}{_pad('----', 20)}-------")
+    for r in rows:
         lines.append(
-            f"{_pad(e.type or '', 8)}{_pad(e.reason or '', 20)}{_pad(age + count_suffix, 10)}"
-            f"{_pad(from_component, 20)}{e.message or ''}"
+            f"{_pad(r['type'], 8)}{_pad(r['reason'], 20)}{_pad(r['age'], 10)}"
+            f"{_pad(r['from'], 20)}{r['message']}"
         )
     return lines
 
