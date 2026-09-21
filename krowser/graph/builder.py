@@ -22,26 +22,40 @@ def fetch_root(
     return FETCHERS_BY_KIND[rt.kind](mgr, context, namespace)
 
 
+# "uses" (Pod -> ConfigMap/Secret) and "grants" (RoleBinding/ClusterRoleBinding
+# -> Role/ClusterRole): forward-only. A ConfigMap/Secret or well-known
+# built-in ClusterRole (e.g. "system:auth-delegator") is commonly shared
+# across many unrelated objects in a namespace/cluster, so letting
+# reachability flow *backward* out of the shared target would pull every
+# other consumer into the graph -- e.g. a StatefulSet's pod showing up in a
+# Deployments-only view just because both mount the same
+# "argocd-cmd-params-cm". A pod can reach the ConfigMap/Secret it uses (and a
+# binding the ClusterRole it grants), but that never flows back to every
+# *other* consumer of the same shared target.
+_FORWARD_ONLY_RELATIONS = {"uses", "grants"}
+
+# "restricts" (NetworkPolicy -> Pod): backward-only, the mirror image of the
+# above. A single broadly-scoped NetworkPolicy (e.g. an empty podSelector,
+# which applies to every pod in the namespace) is commonly shared across many
+# unrelated pods, so letting reachability flow *forward* from the policy to
+# every pod it selects would bridge unrelated workloads into the same view --
+# e.g. a StatefulSet's pod showing up in a Deployments-only view just because
+# a namespace-wide default-deny policy selects both. A reachable pod can
+# discover the policy that restricts it, but that policy never flows forward
+# to every *other* pod it also restricts.
+_BACKWARD_ONLY_RELATIONS = {"restricts"}
+
+
 def _reachable_uids(root_uids: set[str], edges: list[GraphEdge]) -> set[str]:
     # Most relations are traversed in both directions, since either endpoint
     # legitimately wants to discover the other (e.g. a Pod should show which
-    # Service exposes it). "uses" (Pod -> ConfigMap/Secret) and "grants"
-    # (RoleBinding/ClusterRoleBinding -> Role/ClusterRole) are the exceptions:
-    # a ConfigMap/Secret is very commonly shared across many unrelated pods
-    # in a namespace (a TLS cert, an injected CA bundle, common RBAC config),
-    # so letting reachability flow *backward* out of one would pull every
-    # other consumer of that same ConfigMap/Secret into the graph -- e.g. a
-    # StatefulSet's pod showing up in a Deployments-only view just because
-    # both mount the same "argocd-cmd-params-cm". A pod can reach the
-    # ConfigMap/Secret it uses, but that never flows back out to other pods.
-    # Likewise, a well-known built-in ClusterRole (e.g. "system:auth-delegator")
-    # is commonly referenced by many unrelated ClusterRoleBindings cluster-wide
-    # -- one workload's own binding can reach the ClusterRole it grants, but
-    # that never flows back out to every *other* binding that also grants it.
+    # Service exposes it) -- see _FORWARD_ONLY_RELATIONS/_BACKWARD_ONLY_RELATIONS
+    # above for the two asymmetric exceptions.
     adjacency: dict[str, set[str]] = {}
     for edge in edges:
-        adjacency.setdefault(edge.source, set()).add(edge.target)
-        if edge.relation not in ("uses", "grants"):
+        if edge.relation not in _BACKWARD_ONLY_RELATIONS:
+            adjacency.setdefault(edge.source, set()).add(edge.target)
+        if edge.relation not in _FORWARD_ONLY_RELATIONS:
             adjacency.setdefault(edge.target, set()).add(edge.source)
 
     visited = set(root_uids)

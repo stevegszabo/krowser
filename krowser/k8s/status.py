@@ -286,6 +286,28 @@ def _describe_role_binding(obj: Any) -> tuple[Health, str, str | None, list[Badg
     return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
 
 
+def _describe_network_policy(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # No status/condition concept -- "unknown" health matches the existing
+    # ConfigMap/Secret/Role precedent. The API server always populates
+    # spec.policyTypes server-side (defaulting it from whether ingress/egress
+    # rules are present) by the time a real object is fetched, so there's no
+    # need to re-derive that default client-side here.
+    policy_types = obj.spec.policy_types or []
+    status_label = ", ".join(policy_types) or "No policy types"
+    badges = [Badge(text=status_label, variant="status")]
+    if "Ingress" in policy_types:
+        ingress_count = len(obj.spec.ingress or [])
+        badges.append(
+            Badge(text=f"{ingress_count} ingress rule{'s' if ingress_count != 1 else ''}", variant="misc")
+        )
+    if "Egress" in policy_types:
+        egress_count = len(obj.spec.egress or [])
+        badges.append(
+            Badge(text=f"{egress_count} egress rule{'s' if egress_count != 1 else ''}", variant="misc")
+        )
+    return "unknown", status_label, None, badges
+
+
 def _describe_endpoint_slice(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     endpoints = obj.endpoints or []
     total = len(endpoints)
@@ -368,6 +390,7 @@ _DESCRIBERS = {
     "ClusterRoleBinding": _describe_role_binding,
     "EndpointSlice": _describe_endpoint_slice,
     "HorizontalPodAutoscaler": _describe_hpa,
+    "NetworkPolicy": _describe_network_policy,
 }
 
 

@@ -14,7 +14,7 @@ ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
     "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
-    "ClusterRoleBinding", "HorizontalPodAutoscaler",
+    "ClusterRoleBinding", "HorizontalPodAutoscaler", "NetworkPolicy",
 ]
 
 
@@ -368,6 +368,83 @@ def test_pod_graph_includes_serviceaccount_role_and_clusterrole(
     assert ("rb-1", "sa-1", "binds") in relations
     assert ("crb-1", "cr-1", "grants") in relations
     assert ("crb-1", "sa-1", "binds") in relations
+
+
+def test_pod_graph_includes_matching_networkpolicy_excludes_non_matching(
+    monkeypatch, make_pod, make_network_policy
+):
+    # workloads/pods fetches every Pod as a root, so pod-2 is always in the
+    # graph regardless of NetworkPolicy -- what's under test here is that
+    # np-1 (matching pod-1's labels) is pulled in via its "restricts" edge,
+    # while np-2 (matching neither pod) is reachable from nothing and so
+    # gets filtered out entirely, same as any other disconnected expansion node.
+    pod = make_pod("pod-1", "web", labels={"app": "web"})
+    other_pod = make_pod("pod-2", "cache", labels={"app": "cache"})
+    matching_policy = make_network_policy(
+        "np-1", "allow-web", pod_selector=k8s.V1LabelSelector(match_labels={"app": "web"})
+    )
+    non_matching_policy = make_network_policy(
+        "np-2", "allow-db", pod_selector=k8s.V1LabelSelector(match_labels={"app": "db"})
+    )
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Pod": [pod, other_pod],
+            "NetworkPolicy": [matching_policy, non_matching_policy],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/pods", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"pod-1", "pod-2", "np-1"}
+    assert "np-2" not in node_ids
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("np-1", "pod-1", "restricts") in relations
+
+
+def test_shared_networkpolicy_does_not_bridge_unrelated_pod_into_view(
+    monkeypatch, make_deployment, make_replica_set, make_pod, make_network_policy
+):
+    # Reproduces a real base-vault-style namespace: a namespace-wide
+    # default-deny NetworkPolicy (empty podSelector) restricts every pod in
+    # the namespace, including both a Deployment's pod and an unrelated
+    # StatefulSet's pod. The StatefulSet itself isn't fetched for the
+    # Deployments view, so its pod has no "owns" edge into this graph at all
+    # -- the shared NetworkPolicy must not become a backdoor connection, the
+    # same bug link_pod_to_configmap already guards against for ConfigMap.
+    deploy = make_deployment("dep-1", "web")
+    rs = make_replica_set(
+        "rs-1", "web-abc",
+        owner_refs=[k8s.V1OwnerReference(kind="Deployment", name="web", uid="dep-1", api_version="apps/v1")],
+    )
+    deploy_pod = make_pod(
+        "pod-1", "web-abc-xyz",
+        owner_refs=[k8s.V1OwnerReference(kind="ReplicaSet", name="web-abc", uid="rs-1", api_version="apps/v1")],
+    )
+    unrelated_pod = make_pod(
+        "pod-2", "other-0",
+        owner_refs=[k8s.V1OwnerReference(kind="StatefulSet", name="other", uid="sts-1", api_version="apps/v1")],
+    )
+    default_deny = make_network_policy("np-1", "default-deny-all", pod_selector=k8s.V1LabelSelector())
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Deployment": [deploy],
+            "ReplicaSet": [rs],
+            "Pod": [deploy_pod, unrelated_pod],
+            "NetworkPolicy": [default_deny],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/deployments", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"dep-1", "rs-1", "pod-1", "np-1"}
+    assert "pod-2" not in node_ids
 
 
 def test_shared_builtin_clusterrole_does_not_bridge_unrelated_bindings(

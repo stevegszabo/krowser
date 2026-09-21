@@ -4,8 +4,9 @@ from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.graph.builder import GraphBuilder
 from krowser.graph.models import Graph
+from krowser.graph.problems import find_problems
 from krowser.k8s.client import KubeClientManager
-from krowser.k8s.resource_types import UnknownResourceTypeError
+from krowser.k8s.resource_types import PROBLEMS_TYPE_ID, UnknownResourceTypeError
 
 router = APIRouter(prefix="/api", tags=["graph"])
 
@@ -18,6 +19,8 @@ def get_graph(
     mgr: KubeClientManager = Depends(get_kube_client_manager),
 ) -> Graph:
     try:
+        if type == PROBLEMS_TYPE_ID:
+            return find_problems(mgr, context, namespace)
         return GraphBuilder(mgr).build(type, namespace, context)
     except UnknownResourceTypeError:
         raise HTTPException(status_code=404, detail=f"unknown resource type: {type}")

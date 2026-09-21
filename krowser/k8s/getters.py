@@ -135,6 +135,12 @@ def get_ingress(mgr: KubeClientManager, context: str | None, namespace: str, nam
     return _get("Ingress", mgr.networking_v1(context).read_namespaced_ingress, name, namespace)
 
 
+def get_network_policy(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
+    return _get(
+        "NetworkPolicy", mgr.networking_v1(context).read_namespaced_network_policy, name, namespace
+    )
+
+
 def get_endpoint_slice(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
     return _get(
         "EndpointSlice", mgr.discovery_v1(context).read_namespaced_endpoint_slice, name, namespace
@@ -175,6 +181,7 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "Job": get_job,
     "CronJob": get_cron_job,
     "Ingress": get_ingress,
+    "NetworkPolicy": get_network_policy,
     "EndpointSlice": get_endpoint_slice,
     "HorizontalPodAutoscaler": get_horizontal_pod_autoscaler,
 }

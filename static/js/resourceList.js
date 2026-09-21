@@ -13,8 +13,10 @@ function resourceList() {
     // groups the user has expanded *this session* instead of which are
     // collapsed, so "nothing expanded" naturally means "everything
     // collapsed" without needing to know the group list upfront. Workloads
-    // starts expanded since Pods is the default selection on load.
-    expandedGroups: ['Workloads'],
+    // starts expanded since Pods is the default selection on load; Cluster
+    // starts expanded so the Problems dashboard is visible without an
+    // extra click.
+    expandedGroups: ['Cluster', 'Workloads'],
 
     // One level of top-level groups, each holding an ordered list of "rows",
     // one per resource-type item.

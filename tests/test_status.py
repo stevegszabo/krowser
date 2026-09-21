@@ -256,3 +256,28 @@ def test_hpa_reports_degraded_when_scaling_inactive(make_hpa):
 
     assert node.health == "degraded"
     assert node.status_label == "FailedGetResourceMetric"
+
+
+def test_network_policy_reports_unknown_health_with_rule_count_badges(make_network_policy):
+    policy = make_network_policy(
+        "np-1",
+        "allow-web",
+        policy_types=["Ingress", "Egress"],
+        ingress=[k8s.V1NetworkPolicyIngressRule()],
+        egress=[k8s.V1NetworkPolicyEgressRule(), k8s.V1NetworkPolicyEgressRule()],
+    )
+
+    node = build_node(policy, "NetworkPolicy", "networkpolicy", True)
+
+    assert node.health == "unknown"
+    assert node.status_label == "Ingress, Egress"
+    assert any(b.variant == "misc" and b.text == "1 ingress rule" for b in node.badges)
+    assert any(b.variant == "misc" and b.text == "2 egress rules" for b in node.badges)
+
+
+def test_network_policy_with_no_policy_types_shows_fallback_label(make_network_policy):
+    policy = make_network_policy("np-1", "empty", policy_types=[])
+
+    node = build_node(policy, "NetworkPolicy", "networkpolicy", True)
+
+    assert node.status_label == "No policy types"

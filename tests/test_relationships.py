@@ -7,6 +7,7 @@ from krowser.graph.relationships import (
     link_endpointslice_to_pods,
     link_hpa_to_target,
     link_ingress_to_services,
+    link_networkpolicy_to_pods,
     link_owner_references,
     link_pod_to_configmap,
     link_pod_to_node,
@@ -538,3 +539,82 @@ def test_link_hpa_to_target_no_match_is_silent(make_hpa):
     edges = link_hpa_to_target({"HorizontalPodAutoscaler": [hpa], "Deployment": []})
 
     assert edges == []
+
+
+def test_networkpolicy_targets_pod_matching_labels(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1", "allow-web", pod_selector=k8s.V1LabelSelector(match_labels={"app": "web"})
+    )
+    matching_pod = make_pod("pod-1", "web-1", labels={"app": "web"})
+    other_pod = make_pod("pod-2", "cache-1", labels={"app": "cache"})
+
+    edges = link_networkpolicy_to_pods(
+        {"NetworkPolicy": [policy], "Pod": [matching_pod, other_pod]}
+    )
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("np-1", "pod-1", "restricts")]
+
+
+def test_networkpolicy_empty_selector_targets_every_pod_in_namespace(make_network_policy, make_pod):
+    policy = make_network_policy("np-1", "deny-all", pod_selector=k8s.V1LabelSelector())
+    pod_a = make_pod("pod-1", "a", labels={"app": "a"})
+    pod_b = make_pod("pod-2", "b", labels={})
+
+    edges = link_networkpolicy_to_pods({"NetworkPolicy": [policy], "Pod": [pod_a, pod_b]})
+
+    assert {(e.source, e.target) for e in edges} == {("np-1", "pod-1"), ("np-1", "pod-2")}
+
+
+def test_networkpolicy_does_not_target_pod_in_other_namespace(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1", "allow-web", namespace="ns-a", pod_selector=k8s.V1LabelSelector(match_labels={"app": "web"})
+    )
+    other_ns_pod = make_pod("pod-1", "web-1", namespace="ns-b", labels={"app": "web"})
+
+    edges = link_networkpolicy_to_pods({"NetworkPolicy": [policy], "Pod": [other_ns_pod]})
+
+    assert edges == []
+
+
+def test_networkpolicy_match_expressions_in_and_not_in(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-tier",
+        pod_selector=k8s.V1LabelSelector(
+            match_expressions=[
+                k8s.V1LabelSelectorRequirement(key="tier", operator="In", values=["frontend", "backend"]),
+                k8s.V1LabelSelectorRequirement(key="env", operator="NotIn", values=["dev"]),
+            ]
+        ),
+    )
+    matching_pod = make_pod("pod-1", "web-1", labels={"tier": "frontend", "env": "prod"})
+    wrong_tier_pod = make_pod("pod-2", "db-1", labels={"tier": "database", "env": "prod"})
+    dev_pod = make_pod("pod-3", "web-dev", labels={"tier": "frontend", "env": "dev"})
+
+    edges = link_networkpolicy_to_pods(
+        {"NetworkPolicy": [policy], "Pod": [matching_pod, wrong_tier_pod, dev_pod]}
+    )
+
+    assert [(e.source, e.target) for e in edges] == [("np-1", "pod-1")]
+
+
+def test_networkpolicy_match_expressions_exists_and_does_not_exist(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-labeled",
+        pod_selector=k8s.V1LabelSelector(
+            match_expressions=[
+                k8s.V1LabelSelectorRequirement(key="monitored", operator="Exists"),
+                k8s.V1LabelSelectorRequirement(key="excluded", operator="DoesNotExist"),
+            ]
+        ),
+    )
+    matching_pod = make_pod("pod-1", "web-1", labels={"monitored": "true"})
+    missing_label_pod = make_pod("pod-2", "web-2", labels={})
+    excluded_pod = make_pod("pod-3", "web-3", labels={"monitored": "true", "excluded": "true"})
+
+    edges = link_networkpolicy_to_pods(
+        {"NetworkPolicy": [policy], "Pod": [matching_pod, missing_label_pod, excluded_pod]}
+    )
+
+    assert [(e.source, e.target) for e in edges] == [("np-1", "pod-1")]

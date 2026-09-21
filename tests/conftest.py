@@ -370,3 +370,27 @@ def make_hpa():
         )
 
     return _make
+
+
+@pytest.fixture
+def make_network_policy():
+    def _make(
+        uid,
+        name,
+        namespace="ns",
+        pod_selector=None,
+        policy_types=None,
+        ingress=None,
+        egress=None,
+    ):
+        return k8s.V1NetworkPolicy(
+            metadata=_meta(uid, name, namespace),
+            spec=k8s.V1NetworkPolicySpec(
+                pod_selector=pod_selector if pod_selector is not None else k8s.V1LabelSelector(),
+                policy_types=policy_types if policy_types is not None else ["Ingress"],
+                ingress=ingress,
+                egress=egress,
+            ),
+        )
+
+    return _make

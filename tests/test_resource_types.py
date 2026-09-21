@@ -8,6 +8,7 @@ from krowser.k8s.resource_types import (
 def test_resource_type_order_matches_spec():
     assert [rt.label for rt in RESOURCE_TYPES] == [
         "Nodes",
+        "Problems",
         "ConfigMaps",
         "Secrets",
         "Ingresses",
@@ -25,6 +26,7 @@ def test_resource_type_order_matches_spec():
 
 def test_groups_match_spec():
     groups = {rt.label: rt.group for rt in RESOURCE_TYPES}
+    assert groups["Problems"] == "Cluster"
     assert groups["Nodes"] == "Cluster"
     assert groups["ConfigMaps"] == "Config"
     assert groups["Secrets"] == "Config"

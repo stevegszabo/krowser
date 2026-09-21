@@ -158,6 +158,15 @@ def list_ingresses(mgr: KubeClientManager, context: str | None, namespace: str |
     return _call("Ingress", api.list_ingress_for_all_namespaces)
 
 
+def list_network_policies(
+    mgr: KubeClientManager, context: str | None, namespace: str | None
+) -> list[Any]:
+    api = mgr.networking_v1(context)
+    if namespace:
+        return _call("NetworkPolicy", api.list_namespaced_network_policy, namespace)
+    return _call("NetworkPolicy", api.list_network_policy_for_all_namespaces)
+
+
 def list_horizontal_pod_autoscalers(
     mgr: KubeClientManager, context: str | None, namespace: str | None
 ) -> list[Any]:
@@ -230,6 +239,7 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "Job": list_jobs,
     "CronJob": list_cron_jobs,
     "Ingress": list_ingresses,
+    "NetworkPolicy": list_network_policies,
     "EndpointSlice": list_endpoint_slices,
     "HorizontalPodAutoscaler": list_horizontal_pod_autoscalers,
 }

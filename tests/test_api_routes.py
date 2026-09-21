@@ -73,6 +73,7 @@ def test_resource_types_endpoint_returns_fixed_order(client):
     assert res.status_code == 200
     ids = [rt["id"] for rt in res.json()["resource_types"]]
     assert ids[0] == "cluster/nodes"
+    assert ids[1] == "cluster/problems"
     assert ids[-1] == "workloads/pods"
 
 
@@ -134,6 +135,27 @@ def test_resource_yaml_supports_horizontal_pod_autoscaler(client, monkeypatch, m
     yaml_text = res.json()["yaml"]
     assert "kind: HorizontalPodAutoscaler" in yaml_text
     assert "name: web" in yaml_text
+
+
+def test_resource_yaml_supports_network_policy(client, monkeypatch, make_network_policy):
+    policy = make_network_policy("np-1", "allow-web", namespace="ns")
+    policy.kind = "NetworkPolicy"
+    policy.api_version = "networking.k8s.io/v1"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND,
+        "NetworkPolicy",
+        lambda mgr, context, namespace, name: policy,
+    )
+
+    res = client.get(
+        "/api/resource-yaml",
+        params={"kind": "NetworkPolicy", "name": "allow-web", "namespace": "ns"},
+    )
+
+    assert res.status_code == 200
+    yaml_text = res.json()["yaml"]
+    assert "kind: NetworkPolicy" in yaml_text
+    assert "name: allow-web" in yaml_text
 
 
 def test_resource_yaml_unknown_kind_is_404(client):

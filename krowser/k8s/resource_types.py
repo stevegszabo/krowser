@@ -11,11 +11,20 @@ class ResourceTypeSpec:
     kind: str
 
 
+# Not a real Kubernetes Kind -- this id is special-cased in /api/graph to
+# aggregate unhealthy resources across every other type instead of going
+# through the normal single-kind GraphBuilder.build() path (see
+# krowser/graph/problems.py). Kept in RESOURCE_TYPES (rather than bolted on
+# only in the frontend) so it participates in namespace/context selection and
+# the left-pane menu exactly like every other type.
+PROBLEMS_TYPE_ID = "cluster/problems"
+
 # Order here is the exact left-pane display order from the spec. Consecutive
 # entries sharing a `group` render under one group header on the frontend;
 # entries with `group=None` render as flat top-level rows.
 RESOURCE_TYPES: list[ResourceTypeSpec] = [
     ResourceTypeSpec("cluster/nodes", "Nodes", "Cluster", "node", False, "Node"),
+    ResourceTypeSpec(PROBLEMS_TYPE_ID, "Problems", "Cluster", "problem", True, "Problem"),
     ResourceTypeSpec("configmaps", "ConfigMaps", "Config", "configmap", True, "ConfigMap"),
     ResourceTypeSpec("secrets", "Secrets", "Config", "secret", True, "Secret"),
     ResourceTypeSpec("network/ingresses", "Ingresses", "Network", "ingress", True, "Ingress"),
@@ -43,6 +52,7 @@ ICONS_BY_KIND.setdefault("RoleBinding", "rolebinding")
 ICONS_BY_KIND.setdefault("ClusterRole", "clusterrole")
 ICONS_BY_KIND.setdefault("ClusterRoleBinding", "clusterrolebinding")
 ICONS_BY_KIND.setdefault("HorizontalPodAutoscaler", "hpa")
+ICONS_BY_KIND.setdefault("NetworkPolicy", "networkpolicy")
 
 
 class UnknownResourceTypeError(KeyError):

@@ -16,6 +16,7 @@ Relation = Literal[
     "runs-as",
     "grants",
     "scales",
+    "restricts",
 ]
 
 

@@ -386,6 +386,70 @@ def link_endpointslice_to_pods(world: World) -> list[GraphEdge]:
     return edges
 
 
+def _selector_matches(selector: Any, labels: dict[str, str]) -> bool:
+    """A LabelSelector matcher (matchLabels + matchExpressions). Unlike every
+    other linker in this module -- which follows a reference Kubernetes
+    itself already resolved (an ownerReference, a roleRef, an EndpointSlice's
+    targetRef mirroring Service's own selector-derived membership) -- a
+    NetworkPolicy's podSelector has no equivalent controller-computed
+    "resolved membership" object to piggyback on, so this is the one place
+    selector matching has to be implemented directly. An empty selector
+    (no matchLabels and no matchExpressions) matches every pod in the
+    namespace, per the NetworkPolicy spec.
+    """
+    if selector is None:
+        return False
+    for key, value in (selector.match_labels or {}).items():
+        if labels.get(key) != value:
+            return False
+    for expr in selector.match_expressions or []:
+        values = expr.values or []
+        if expr.operator == "In":
+            if labels.get(expr.key) not in values:
+                return False
+        elif expr.operator == "NotIn":
+            if labels.get(expr.key) in values:
+                return False
+        elif expr.operator == "Exists":
+            if expr.key not in labels:
+                return False
+        elif expr.operator == "DoesNotExist":
+            if expr.key in labels:
+                return False
+    return True
+
+
+def link_networkpolicy_to_pods(world: World) -> list[GraphEdge]:
+    """A NetworkPolicy applies to whichever pods in its own namespace match
+    its spec.podSelector -- see _selector_matches for why this is matched
+    directly rather than following a pre-resolved reference.
+
+    Uses its own "restricts" relation rather than reusing "targets"
+    (EndpointSlice -> Pod) because the two need opposite reachability
+    treatment in builder.py's _reachable_uids: a broadly-scoped policy (e.g.
+    an empty podSelector matching every pod in the namespace) is exactly the
+    kind of many-to-one hub that must not bridge unrelated pods into the same
+    view, the same problem "uses"/"grants" solve for ConfigMap/Secret and
+    ClusterRole -- just with the hub on the *source* side of the edge here
+    instead of the target side.
+    """
+    edges = []
+    for policy in world.get("NetworkPolicy", []):
+        for pod in world.get("Pod", []):
+            if pod.metadata.namespace != policy.metadata.namespace:
+                continue
+            if _selector_matches(policy.spec.pod_selector, pod.metadata.labels or {}):
+                edges.append(
+                    GraphEdge(
+                        id=f"restricts:{policy.metadata.uid}:{pod.metadata.uid}",
+                        source=policy.metadata.uid,
+                        target=pod.metadata.uid,
+                        relation="restricts",
+                    )
+                )
+    return edges
+
+
 def link_hpa_to_target(world: World) -> list[GraphEdge]:
     """An HPA references its scale target via spec.scaleTargetRef
     {kind, name}, not an ownerReference. Looked up generically over whatever
@@ -428,6 +492,7 @@ LINKERS = [
     link_clusterrolebinding_to_clusterrole,
     link_rolebinding_to_serviceaccount_subjects,
     link_clusterrolebinding_to_serviceaccount_subjects,
+    link_networkpolicy_to_pods,
     link_hpa_to_target,
 ]
 
