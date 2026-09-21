@@ -450,6 +450,84 @@ def link_networkpolicy_to_pods(world: World) -> list[GraphEdge]:
     return edges
 
 
+def _peer_matches_pod(peer: Any, pod: Any, policy_namespace: str) -> bool:
+    """Resolves one NetworkPolicyPeer (an ingress rule's `from` entry or an
+    egress rule's `to` entry) against a candidate Pod.
+
+    ipBlock peers are skipped entirely -- an external CIDR has no
+    Kubernetes object a graph edge could point at. A namespaceSelector is
+    matched against the pod's own namespace using only the well-known,
+    always-present `kubernetes.io/metadata.name` label -- correct for the
+    common "select this namespace by name" pattern, but it won't match a
+    custom namespace label, since real Namespace objects (and their actual
+    labels) aren't fetched anywhere else in this app's graph building either.
+    """
+    if peer.ip_block is not None:
+        return False
+    if peer.namespace_selector is not None:
+        namespace_labels = {"kubernetes.io/metadata.name": pod.metadata.namespace}
+        if not _selector_matches(peer.namespace_selector, namespace_labels):
+            return False
+        # A namespaceSelector with no podSelector alongside it matches every
+        # pod in the matched namespace(s).
+        if peer.pod_selector is None:
+            return True
+        return _selector_matches(peer.pod_selector, pod.metadata.labels or {})
+    if peer.pod_selector is not None:
+        # No namespaceSelector: a bare podSelector only ever applies within
+        # the NetworkPolicy's own namespace.
+        return pod.metadata.namespace == policy_namespace and _selector_matches(
+            peer.pod_selector, pod.metadata.labels or {}
+        )
+    return False
+
+
+def link_networkpolicy_peers(world: World) -> list[GraphEdge]:
+    """Resolves each NetworkPolicy's ingress `from` / egress `to` peers
+    against pods already present in `world`, so a policy shows not just that
+    it restricts a pod but what traffic it actually allows.
+
+    Deliberately excluded from reachability entirely in builder.py's
+    _reachable_uids (neither forward- nor backward-only, unlike every other
+    special-cased relation) -- a permissive rule (e.g. an ingress peer with
+    an empty namespaceSelector, matching every pod in every namespace) would
+    otherwise bridge every pod in the cluster into any view the policy
+    happens to appear in, the instant that rule got evaluated. These edges
+    only ever render when both the policy and the peer pod are already
+    reachable for some other, unrelated reason (e.g. namespace-wide "view
+    all Pods", where every pod in the namespace is already a root).
+    """
+    edges: list[GraphEdge] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def _add(policy: Any, pod: Any, relation: str) -> None:
+        key = (policy.metadata.uid, pod.metadata.uid, relation)
+        if key in seen:
+            return
+        seen.add(key)
+        edges.append(
+            GraphEdge(
+                id=f"{relation}:{policy.metadata.uid}:{pod.metadata.uid}",
+                source=policy.metadata.uid,
+                target=pod.metadata.uid,
+                relation=relation,
+            )
+        )
+
+    for policy in world.get("NetworkPolicy", []):
+        for rule in policy.spec.ingress or []:
+            for peer in rule._from or []:
+                for pod in world.get("Pod", []):
+                    if _peer_matches_pod(peer, pod, policy.metadata.namespace):
+                        _add(policy, pod, "allows-from")
+        for rule in policy.spec.egress or []:
+            for peer in rule.to or []:
+                for pod in world.get("Pod", []):
+                    if _peer_matches_pod(peer, pod, policy.metadata.namespace):
+                        _add(policy, pod, "allows-to")
+    return edges
+
+
 def link_hpa_to_target(world: World) -> list[GraphEdge]:
     """An HPA references its scale target via spec.scaleTargetRef
     {kind, name}, not an ownerReference. Looked up generically over whatever
@@ -493,6 +571,7 @@ LINKERS = [
     link_rolebinding_to_serviceaccount_subjects,
     link_clusterrolebinding_to_serviceaccount_subjects,
     link_networkpolicy_to_pods,
+    link_networkpolicy_peers,
     link_hpa_to_target,
 ]
 

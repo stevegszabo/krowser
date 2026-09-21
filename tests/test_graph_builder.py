@@ -501,3 +501,93 @@ def test_shared_builtin_clusterrole_does_not_bridge_unrelated_bindings(
     assert "sa-2" not in node_ids
     assert "sa-3" not in node_ids
     assert "sa-4" not in node_ids
+
+
+def test_networkpolicy_peer_edge_does_not_bridge_unrelated_pod_into_view(
+    monkeypatch, make_deployment, make_replica_set, make_pod, make_network_policy
+):
+    # A permissive ingress rule (empty namespaceSelector, matching every pod
+    # in every namespace) must not pull an otherwise-unrelated StatefulSet
+    # pod into a Deployments-only view just because it happens to be a valid
+    # "allows-from" peer -- see builder.py's _NON_REACHABILITY_RELATIONS.
+    deploy = make_deployment("dep-1", "web")
+    rs = make_replica_set(
+        "rs-1", "web-abc",
+        owner_refs=[k8s.V1OwnerReference(kind="Deployment", name="web", uid="dep-1", api_version="apps/v1")],
+    )
+    deploy_pod = make_pod(
+        "pod-1", "web-abc-xyz",
+        owner_refs=[k8s.V1OwnerReference(kind="ReplicaSet", name="web-abc", uid="rs-1", api_version="apps/v1")],
+    )
+    unrelated_pod = make_pod(
+        "pod-2", "other-0",
+        owner_refs=[k8s.V1OwnerReference(kind="StatefulSet", name="other", uid="sts-1", api_version="apps/v1")],
+    )
+    permissive_policy = make_network_policy(
+        "np-1",
+        "allow-everyone",
+        pod_selector=k8s.V1LabelSelector(),
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(namespace_selector=k8s.V1LabelSelector())]
+            )
+        ],
+    )
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Deployment": [deploy],
+            "ReplicaSet": [rs],
+            "Pod": [deploy_pod, unrelated_pod],
+            "NetworkPolicy": [permissive_policy],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/deployments", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"dep-1", "rs-1", "pod-1", "np-1"}
+    assert "pod-2" not in node_ids
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    # np-1 legitimately allows-from pod-1 too (it matches every pod via the
+    # empty podSelector/namespaceSelector), and pod-1 is already reachable
+    # via ownership -- so unlike pod-2, this edge is expected to render.
+    assert ("np-1", "pod-1", "allows-from") in relations
+
+
+def test_networkpolicy_peer_edge_renders_when_both_pods_already_reachable(
+    monkeypatch, make_pod, make_network_policy
+):
+    # workloads/pods fetches every Pod in the namespace as a root, so both
+    # pods here are already reachable independent of the NetworkPolicy --
+    # this is exactly the case where an "allows-from" edge is expected to
+    # actually show up, since it adds real context without having caused
+    # either pod to become visible in the first place.
+    client_pod = make_pod("pod-1", "client", labels={"role": "client"})
+    server_pod = make_pod("pod-2", "server", labels={"role": "server"})
+    policy = make_network_policy(
+        "np-1",
+        "allow-client",
+        pod_selector=k8s.V1LabelSelector(match_labels={"role": "server"}),
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"role": "client"}))]
+            )
+        ],
+    )
+
+    _patch_fetchers(
+        monkeypatch,
+        {"Pod": [client_pod, server_pod], "NetworkPolicy": [policy]},
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/pods", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"pod-1", "pod-2", "np-1"}
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("np-1", "pod-2", "restricts") in relations
+    assert ("np-1", "pod-1", "allows-from") in relations

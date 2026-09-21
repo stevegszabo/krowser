@@ -17,6 +17,8 @@ Relation = Literal[
     "grants",
     "scales",
     "restricts",
+    "allows-from",
+    "allows-to",
 ]
 
 

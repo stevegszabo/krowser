@@ -45,14 +45,31 @@ _FORWARD_ONLY_RELATIONS = {"uses", "grants"}
 # to every *other* pod it also restricts.
 _BACKWARD_ONLY_RELATIONS = {"restricts"}
 
+# "allows-from"/"allows-to" (NetworkPolicy -> peer Pod, an ingress/egress
+# rule's own peer once resolved to a real fetched Pod): excluded from
+# reachability in *both* directions, unlike every other relation above. A
+# permissive rule (e.g. an ingress peer with an empty namespaceSelector,
+# matching every pod in every namespace) is a hub on both the "what it
+# restricts" and "what it allows" axes at once, so neither a forward-only nor
+# a backward-only rule alone would stop it from bridging in every pod in the
+# cluster the moment the policy became visible for any other reason. These
+# edges never establish reachability either way; they still render (via the
+# ordinary both-endpoints-already-reachable filter in build(), below) purely
+# as extra context whenever the peer pod happens to already be visible for
+# an unrelated reason -- e.g. a namespace-wide "view all Pods", where every
+# pod in the namespace is already a root.
+_NON_REACHABILITY_RELATIONS = {"allows-from", "allows-to"}
+
 
 def _reachable_uids(root_uids: set[str], edges: list[GraphEdge]) -> set[str]:
     # Most relations are traversed in both directions, since either endpoint
     # legitimately wants to discover the other (e.g. a Pod should show which
-    # Service exposes it) -- see _FORWARD_ONLY_RELATIONS/_BACKWARD_ONLY_RELATIONS
-    # above for the two asymmetric exceptions.
+    # Service exposes it) -- see _FORWARD_ONLY_RELATIONS/_BACKWARD_ONLY_RELATIONS/
+    # _NON_REACHABILITY_RELATIONS above for the exceptions.
     adjacency: dict[str, set[str]] = {}
     for edge in edges:
+        if edge.relation in _NON_REACHABILITY_RELATIONS:
+            continue
         if edge.relation not in _BACKWARD_ONLY_RELATIONS:
             adjacency.setdefault(edge.source, set()).add(edge.target)
         if edge.relation not in _FORWARD_ONLY_RELATIONS:

@@ -7,6 +7,7 @@ from krowser.graph.relationships import (
     link_endpointslice_to_pods,
     link_hpa_to_target,
     link_ingress_to_services,
+    link_networkpolicy_peers,
     link_networkpolicy_to_pods,
     link_owner_references,
     link_pod_to_configmap,
@@ -618,3 +619,189 @@ def test_networkpolicy_match_expressions_exists_and_does_not_exist(make_network_
     )
 
     assert [(e.source, e.target) for e in edges] == [("np-1", "pod-1")]
+
+
+def test_networkpolicy_ingress_peer_podselector_same_namespace(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-web",
+        namespace="ns",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"role": "client"}))]
+            )
+        ],
+    )
+    client_pod = make_pod("pod-1", "client-1", namespace="ns", labels={"role": "client"})
+    other_pod = make_pod("pod-2", "other-1", namespace="ns", labels={"role": "other"})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [client_pod, other_pod]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("np-1", "pod-1", "allows-from")]
+
+
+def test_networkpolicy_egress_peer_podselector_produces_allows_to(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-web",
+        namespace="ns",
+        egress=[
+            k8s.V1NetworkPolicyEgressRule(
+                to=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"role": "db"}))]
+            )
+        ],
+    )
+    db_pod = make_pod("pod-1", "db-1", namespace="ns", labels={"role": "db"})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [db_pod]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("np-1", "pod-1", "allows-to")]
+
+
+def test_networkpolicy_podselector_peer_ignores_other_namespace(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-web",
+        namespace="ns-a",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"role": "client"}))]
+            )
+        ],
+    )
+    other_ns_pod = make_pod("pod-1", "client-1", namespace="ns-b", labels={"role": "client"})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [other_ns_pod]})
+
+    assert edges == []
+
+
+def test_networkpolicy_namespaceselector_only_peer_matches_every_pod_in_namespace(
+    make_network_policy, make_pod
+):
+    policy = make_network_policy(
+        "np-1",
+        "allow-kube-system",
+        namespace="ns",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[
+                    k8s.V1NetworkPolicyPeer(
+                        namespace_selector=k8s.V1LabelSelector(
+                            match_labels={"kubernetes.io/metadata.name": "kube-system"}
+                        )
+                    )
+                ]
+            )
+        ],
+    )
+    matching_pod_a = make_pod("pod-1", "coredns-1", namespace="kube-system", labels={})
+    matching_pod_b = make_pod("pod-2", "coredns-2", namespace="kube-system", labels={})
+    other_ns_pod = make_pod("pod-3", "app-1", namespace="ns", labels={})
+
+    edges = link_networkpolicy_peers(
+        {"NetworkPolicy": [policy], "Pod": [matching_pod_a, matching_pod_b, other_ns_pod]}
+    )
+
+    assert {(e.source, e.target) for e in edges} == {("np-1", "pod-1"), ("np-1", "pod-2")}
+
+
+def test_networkpolicy_empty_namespaceselector_peer_matches_every_namespace(
+    make_network_policy, make_pod
+):
+    policy = make_network_policy(
+        "np-1",
+        "allow-all-namespaces",
+        namespace="ns",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(namespace_selector=k8s.V1LabelSelector())]
+            )
+        ],
+    )
+    pod_a = make_pod("pod-1", "a", namespace="ns", labels={})
+    pod_b = make_pod("pod-2", "b", namespace="other-ns", labels={})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [pod_a, pod_b]})
+
+    assert {(e.source, e.target) for e in edges} == {("np-1", "pod-1"), ("np-1", "pod-2")}
+
+
+def test_networkpolicy_combined_podselector_and_namespaceselector_peer(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-dns",
+        namespace="ns",
+        egress=[
+            k8s.V1NetworkPolicyEgressRule(
+                to=[
+                    k8s.V1NetworkPolicyPeer(
+                        namespace_selector=k8s.V1LabelSelector(
+                            match_labels={"kubernetes.io/metadata.name": "kube-system"}
+                        ),
+                        pod_selector=k8s.V1LabelSelector(match_labels={"k8s-app": "kube-dns"}),
+                    )
+                ]
+            )
+        ],
+    )
+    coredns_pod = make_pod("pod-1", "coredns-1", namespace="kube-system", labels={"k8s-app": "kube-dns"})
+    other_kube_system_pod = make_pod("pod-2", "other-1", namespace="kube-system", labels={"k8s-app": "other"})
+
+    edges = link_networkpolicy_peers(
+        {"NetworkPolicy": [policy], "Pod": [coredns_pod, other_kube_system_pod]}
+    )
+
+    assert [(e.source, e.target) for e in edges] == [("np-1", "pod-1")]
+
+
+def test_networkpolicy_ipblock_peer_produces_no_edges(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-cidr",
+        namespace="ns",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(ip_block=k8s.V1IPBlock(cidr="10.0.0.0/24"))]
+            )
+        ],
+    )
+    pod = make_pod("pod-1", "app-1", namespace="ns", labels={})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [pod]})
+
+    assert edges == []
+
+
+def test_networkpolicy_rule_with_no_from_produces_no_peer_edges(make_network_policy, make_pod):
+    # A rule with no `from`/`to` at all means "allow from/to anywhere" -- not
+    # a specific peer, so there's nothing concrete to draw an edge to.
+    policy = make_network_policy(
+        "np-1", "allow-anywhere", namespace="ns", ingress=[k8s.V1NetworkPolicyIngressRule()]
+    )
+    pod = make_pod("pod-1", "app-1", namespace="ns", labels={})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [pod]})
+
+    assert edges == []
+
+
+def test_networkpolicy_peer_matching_multiple_rules_dedupes_to_one_edge(make_network_policy, make_pod):
+    policy = make_network_policy(
+        "np-1",
+        "allow-web-twice",
+        namespace="ns",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"role": "client"}))]
+            ),
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector())]
+            ),
+        ],
+    )
+    pod = make_pod("pod-1", "client-1", namespace="ns", labels={"role": "client"})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [pod]})
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("np-1", "pod-1", "allows-from")]
