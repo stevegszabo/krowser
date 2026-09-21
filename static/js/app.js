@@ -79,6 +79,7 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('appRoot', () => ({
     pollTimer: null,
     requestSeq: 0,
+    refreshInFlight: false,
 
     async init() {
       const store = this.$store.app;
@@ -245,12 +246,25 @@ document.addEventListener('alpine:init', () => {
 
     restartPolling() {
       if (this.pollTimer) clearInterval(this.pollTimer);
-      this.pollTimer = setInterval(() => this.refresh(), this.$store.app.pollMs);
+      // Skip a tick while the previous refresh() is still in flight, rather
+      // than firing another one -- if a query's latency exceeds pollMs (e.g.
+      // a Workloads type across all namespaces on a busy cluster), every
+      // tick would otherwise bump requestSeq again before the prior request
+      // resolves, so its result is discarded by the staleness guard in
+      // refresh() every time and store.graph can never be assigned: a
+      // livelock, not just a slow load. User-driven calls to refresh()
+      // (onTypeSelect/onContextChange/onNamespaceChange, the manual Refresh
+      // button) are untouched and always fire immediately.
+      this.pollTimer = setInterval(() => {
+        if (!this.refreshInFlight) this.refresh();
+      }, this.$store.app.pollMs);
     },
 
     async refresh() {
       const store = this.$store.app;
       if (!store.selectedType) return;
+
+      this.refreshInFlight = true;
 
       // Guard against out-of-order responses: if the user changes filters
       // again (or a fast namespace-scoped request outruns a slow, larger
@@ -279,6 +293,7 @@ document.addEventListener('alpine:init', () => {
       } finally {
         clearTimeout(spinnerTimer);
         if (requestId === this.requestSeq) store.loading = false;
+        this.refreshInFlight = false;
       }
     },
   }));
