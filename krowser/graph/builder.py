@@ -7,7 +7,7 @@ from krowser.graph.relationships import build_edges
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.fetchers import FETCHERS_BY_KIND
 from krowser.k8s.metrics import fetch_node_metrics, fetch_pod_metrics
-from krowser.k8s.resource_types import ICONS_BY_KIND, ResourceTypeSpec, get_resource_type
+from krowser.k8s.resource_types import NAMESPACES_TYPE_ID, ICONS_BY_KIND, ResourceTypeSpec, get_resource_type
 from krowser.k8s.status import build_node
 
 
@@ -19,6 +19,12 @@ def fetch_root(
         # to PVs bound to a PVC in that namespace rather than ignoring the filter.
         pvs = FETCHERS_BY_KIND["PersistentVolume"](mgr, context, None)
         return [pv for pv in pvs if pv.spec.claim_ref and pv.spec.claim_ref.namespace == namespace]
+    if type_id == NAMESPACES_TYPE_ID and namespace:
+        # Namespace is cluster-scoped and has no metadata.namespace of its own
+        # to filter by -- when a namespace is selected, that name itself is
+        # the exact resource being asked for.
+        namespaces = FETCHERS_BY_KIND["Namespace"](mgr, context, None)
+        return [ns for ns in namespaces if ns.metadata.name == namespace]
     return FETCHERS_BY_KIND[rt.kind](mgr, context, namespace)
 
 
@@ -86,6 +92,73 @@ def _reachable_uids(root_uids: set[str], edges: list[GraphEdge]) -> set[str]:
     return visited
 
 
+# Mirrors static/js/graphView.js's RELATION_LABEL -- kept here only to build
+# a combined label when multiple relations connect the same node pair (see
+# _merge_parallel_edges); the frontend still derives a single relation's
+# label independently for the ordinary, non-merged case.
+_RELATION_DISPLAY = {
+    "owns": "owns",
+    "routes-to": "routes to",
+    "claims": "claims",
+    "binds": "binds",
+    "uses": "uses",
+    "exposes": "exposes",
+    "targets": "targets",
+    "runs-on": "runs on",
+    "runs-as": "runs as",
+    "grants": "grants",
+    "scales": "scales",
+    "restricts": "restricts",
+    "allows-from": "allows from",
+    "allows-to": "allows to",
+}
+
+# When a NetworkPolicy's own podSelector and one of its ingress/egress peer
+# selectors both match the very same pod (e.g. a single-replica StatefulSet's
+# own Raft peer rule matching itself), _merge_parallel_edges below combines
+# "restricts" with that "allows-from"/"allows-to" edge into one. "restricts"
+# is preferred as the combined edge's primary `relation` when present, since
+# "this policy applies to this pod" is the most fundamental of the three
+# facts; the full set of relations is preserved in the combined `label` text.
+_MERGE_RELATION_PRIORITY = ("restricts", "allows-from", "allows-to")
+
+
+def _merge_parallel_edges(edges: list[GraphEdge]) -> list[GraphEdge]:
+    """Collapses multiple edges that connect the same (source, target) pair
+    into one, so a viewer sees a single relationship between two nodes
+    instead of several parallel arrows for what reads as one connection.
+    """
+    groups: dict[tuple[str, str], list[GraphEdge]] = {}
+    order: list[tuple[str, str]] = []
+    for edge in edges:
+        key = (edge.source, edge.target)
+        if key not in groups:
+            order.append(key)
+        groups.setdefault(key, []).append(edge)
+
+    merged: list[GraphEdge] = []
+    for key in order:
+        group = groups[key]
+        if len(group) == 1:
+            merged.append(group[0])
+            continue
+        by_relation = {e.relation: e for e in group}
+        primary = next(
+            (by_relation[r] for r in _MERGE_RELATION_PRIORITY if r in by_relation), group[0]
+        )
+        label = ", ".join(_RELATION_DISPLAY.get(e.relation, e.relation) for e in group)
+        merged.append(
+            GraphEdge(
+                id=primary.id,
+                source=primary.source,
+                target=primary.target,
+                relation=primary.relation,
+                label=label,
+            )
+        )
+    return merged
+
+
 class GraphBuilder:
     def __init__(self, mgr: KubeClientManager):
         self._mgr = mgr
@@ -138,5 +211,6 @@ class GraphBuilder:
         reachable = _reachable_uids(root_uids, all_edges)
         nodes = [n for n in all_nodes if n.id in reachable]
         edges = [e for e in all_edges if e.source in reachable and e.target in reachable]
+        edges = _merge_parallel_edges(edges)
 
         return Graph(nodes=nodes, edges=edges, resource_count=resource_count, truncated=truncated)

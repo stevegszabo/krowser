@@ -27,7 +27,7 @@ function renderCard(node) {
     : '';
 
   return `
-    <div class="krw-card ${node.is_root ? 'is-root' : ''} ${node.is_selected ? 'is-selected' : ''}">
+    <div class="krw-card ${node.is_root ? 'is-root' : ''} ${node.is_selected ? 'is-selected' : ''}" data-node-id="${escapeHtml(node.id)}">
       <div class="krw-card-icon">${icon}</div>
       <div class="krw-card-body">
         <div class="krw-card-title" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</div>

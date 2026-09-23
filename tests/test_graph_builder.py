@@ -14,7 +14,8 @@ ALL_KINDS = [
     "Pod", "Service", "ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume",
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
     "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
-    "ClusterRoleBinding", "HorizontalPodAutoscaler", "NetworkPolicy",
+    "ClusterRoleBinding", "HorizontalPodAutoscaler", "NetworkPolicy", "Namespace",
+    "ResourceQuota", "LimitRange",
 ]
 
 
@@ -550,11 +551,15 @@ def test_networkpolicy_peer_edge_does_not_bridge_unrelated_pod_into_view(
     assert node_ids == {"dep-1", "rs-1", "pod-1", "np-1"}
     assert "pod-2" not in node_ids
 
-    relations = {(e.source, e.target, e.relation) for e in graph.edges}
-    # np-1 legitimately allows-from pod-1 too (it matches every pod via the
-    # empty podSelector/namespaceSelector), and pod-1 is already reachable
-    # via ownership -- so unlike pod-2, this edge is expected to render.
-    assert ("np-1", "pod-1", "allows-from") in relations
+    # np-1's podSelector and its ingress peer selector both match pod-1 (it
+    # matches every pod via the empty podSelector/namespaceSelector), so
+    # "restricts" and "allows-from" merge into a single combined edge rather
+    # than appearing as two separate ones -- pod-1 is already reachable via
+    # ownership, so unlike pod-2, this edge is expected to render.
+    edges_between = [e for e in graph.edges if e.source == "np-1" and e.target == "pod-1"]
+    assert len(edges_between) == 1
+    assert edges_between[0].relation == "restricts"
+    assert edges_between[0].label == "restricts, allows from"
 
 
 def test_networkpolicy_peer_edge_renders_when_both_pods_already_reachable(
@@ -591,3 +596,76 @@ def test_networkpolicy_peer_edge_renders_when_both_pods_already_reachable(
     relations = {(e.source, e.target, e.relation) for e in graph.edges}
     assert ("np-1", "pod-2", "restricts") in relations
     assert ("np-1", "pod-1", "allows-from") in relations
+
+
+def test_networkpolicy_self_matching_peer_merges_into_single_edge(
+    monkeypatch, make_pod, make_network_policy
+):
+    # Reproduces the real base-vault "allow-vault-server" policy: its own
+    # podSelector applies to vault-0, and its ingress/egress peer selectors
+    # (meant for Raft traffic between server replicas) also happen to match
+    # vault-0 itself, since this StatefulSet only has one replica. That's
+    # three separate true facts about the same (policy, pod) pair --
+    # "restricts", "allows-from", and "allows-to" -- which must render as one
+    # combined edge, not three parallel arrows.
+    server_pod = make_pod("pod-1", "vault-0", labels={"component": "server"})
+    policy = make_network_policy(
+        "np-1",
+        "allow-vault-server",
+        pod_selector=k8s.V1LabelSelector(match_labels={"component": "server"}),
+        policy_types=["Ingress", "Egress"],
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"component": "server"}))]
+            )
+        ],
+        egress=[
+            k8s.V1NetworkPolicyEgressRule(
+                to=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"component": "server"}))]
+            )
+        ],
+    )
+
+    _patch_fetchers(monkeypatch, {"Pod": [server_pod], "NetworkPolicy": [policy]})
+
+    graph = GraphBuilder(mgr=None).build("workloads/pods", namespace="ns", context=None)
+
+    edges_between = [e for e in graph.edges if e.source == "np-1" and e.target == "pod-1"]
+    assert len(edges_between) == 1
+    edge = edges_between[0]
+    assert edge.relation == "restricts"
+    assert edge.label == "restricts, allows from, allows to"
+
+
+def test_namespaces_view_filters_to_selected_namespace_by_name(
+    monkeypatch, make_namespace, make_resource_quota, make_limit_range
+):
+    team_a = make_namespace("ns-1", "team-a")
+    team_b = make_namespace("ns-2", "team-b")
+    rq = make_resource_quota("rq-1", "compute-quota", namespace="team-a")
+    other_rq = make_resource_quota("rq-2", "other-quota", namespace="team-b")
+    lr = make_limit_range("lr-1", "defaults", namespace="team-a")
+
+    _patch_fetchers(
+        monkeypatch,
+        {"Namespace": [team_a, team_b], "ResourceQuota": [rq, other_rq], "LimitRange": [lr]},
+    )
+
+    graph = GraphBuilder(mgr=None).build("cluster/namespaces", namespace="team-a", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"ns-1", "rq-1", "lr-1"}
+    assert "ns-2" not in node_ids
+    assert "rq-2" not in node_ids
+
+
+def test_namespaces_view_shows_all_namespaces_when_unfiltered(
+    monkeypatch, make_namespace
+):
+    team_a = make_namespace("ns-1", "team-a")
+    team_b = make_namespace("ns-2", "team-b")
+    _patch_fetchers(monkeypatch, {"Namespace": [team_a, team_b]})
+
+    graph = GraphBuilder(mgr=None).build("cluster/namespaces", namespace="", context=None)
+
+    assert {n.id for n in graph.nodes} == {"ns-1", "ns-2"}

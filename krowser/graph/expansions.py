@@ -17,13 +17,18 @@ WORKLOAD_RELATED_KINDS = ("ConfigMap", "Secret", "PersistentVolumeClaim", "Persi
 # to it via a RoleBinding/ClusterRoleBinding.
 RBAC_RELATED_KINDS = ("ServiceAccount", "RoleBinding", "ClusterRoleBinding", "Role", "ClusterRole")
 
-# Extra kind every Workloads-group view also pulls in to show which
-# NetworkPolicy (if any) applies to a workload's pods.
-NETWORK_POLICY_RELATED_KINDS = ("NetworkPolicy",)
+# Extra kinds every Workloads-group view also pulls in to show which
+# NetworkPolicy (if any) applies to a workload's pods. Namespace is fetched
+# alongside it purely as internal lookup data for link_networkpolicy_peers'
+# namespaceSelector matching (real namespace labels, not just the
+# kubernetes.io/metadata.name convention) -- it never becomes a visible node
+# itself here, since nothing links to it in these views.
+NETWORK_POLICY_RELATED_KINDS = ("NetworkPolicy", "Namespace")
 
 # Keyed by left-pane resource-type id (krowser.k8s.resource_types.RESOURCE_TYPES).
 GRAPH_EXPANSIONS: dict[str, GraphExpansion] = {
     "cluster/nodes": GraphExpansion(("Pod",)),
+    "cluster/namespaces": GraphExpansion(("ResourceQuota", "LimitRange")),
     "configmaps": GraphExpansion(()),
     "network/ingresses": GraphExpansion(("Service", "Pod", "EndpointSlice")),
     "network/services": GraphExpansion(("EndpointSlice", "Pod")),

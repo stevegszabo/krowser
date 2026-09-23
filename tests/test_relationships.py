@@ -7,6 +7,7 @@ from krowser.graph.relationships import (
     link_endpointslice_to_pods,
     link_hpa_to_target,
     link_ingress_to_services,
+    link_namespace_to_resourcequota_and_limitrange,
     link_networkpolicy_peers,
     link_networkpolicy_to_pods,
     link_owner_references,
@@ -805,3 +806,88 @@ def test_networkpolicy_peer_matching_multiple_rules_dedupes_to_one_edge(make_net
     edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [pod]})
 
     assert [(e.source, e.target, e.relation) for e in edges] == [("np-1", "pod-1", "allows-from")]
+
+
+def test_networkpolicy_namespaceselector_matches_real_custom_namespace_label(
+    make_network_policy, make_pod, make_namespace
+):
+    # With a real Namespace object fetched (unlike the kubernetes.io/metadata.name-
+    # only fallback), a namespaceSelector can match an arbitrary custom label,
+    # not just the namespace's own name.
+    policy = make_network_policy(
+        "np-1",
+        "allow-prod",
+        namespace="ns",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[
+                    k8s.V1NetworkPolicyPeer(
+                        namespace_selector=k8s.V1LabelSelector(match_labels={"env": "prod"})
+                    )
+                ]
+            )
+        ],
+    )
+    prod_ns = make_namespace("ns-a-uid", "team-a", labels={"env": "prod"})
+    staging_ns = make_namespace("ns-b-uid", "team-b", labels={"env": "staging"})
+    prod_pod = make_pod("pod-1", "app-1", namespace="team-a", labels={})
+    staging_pod = make_pod("pod-2", "app-2", namespace="team-b", labels={})
+
+    edges = link_networkpolicy_peers(
+        {
+            "NetworkPolicy": [policy],
+            "Pod": [prod_pod, staging_pod],
+            "Namespace": [prod_ns, staging_ns],
+        }
+    )
+
+    assert [(e.source, e.target) for e in edges] == [("np-1", "pod-1")]
+
+
+def test_networkpolicy_namespaceselector_falls_back_to_name_when_namespace_not_fetched(
+    make_network_policy, make_pod
+):
+    # No "Namespace" key in world at all (e.g. a view that doesn't fetch it)
+    # -- matching must still work via the kubernetes.io/metadata.name
+    # convention, exactly as before Namespace objects were fetchable.
+    policy = make_network_policy(
+        "np-1",
+        "allow-kube-system",
+        namespace="ns",
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[
+                    k8s.V1NetworkPolicyPeer(
+                        namespace_selector=k8s.V1LabelSelector(
+                            match_labels={"kubernetes.io/metadata.name": "kube-system"}
+                        )
+                    )
+                ]
+            )
+        ],
+    )
+    pod = make_pod("pod-1", "coredns-1", namespace="kube-system", labels={})
+
+    edges = link_networkpolicy_peers({"NetworkPolicy": [policy], "Pod": [pod]})
+
+    assert [(e.source, e.target) for e in edges] == [("np-1", "pod-1")]
+
+
+def test_link_namespace_to_resourcequota_and_limitrange(
+    make_namespace, make_resource_quota, make_limit_range
+):
+    ns = make_namespace("ns-1", "team-a")
+    other_ns = make_namespace("ns-2", "team-b")
+    rq = make_resource_quota("rq-1", "compute-quota", namespace="team-a")
+    other_rq = make_resource_quota("rq-2", "other-quota", namespace="team-b")
+    lr = make_limit_range("lr-1", "defaults", namespace="team-a")
+
+    edges = link_namespace_to_resourcequota_and_limitrange(
+        {"Namespace": [ns, other_ns], "ResourceQuota": [rq, other_rq], "LimitRange": [lr]}
+    )
+
+    assert {(e.source, e.target, e.relation) for e in edges} == {
+        ("ns-1", "rq-1", "owns"),
+        ("ns-1", "lr-1", "owns"),
+        ("ns-2", "rq-2", "owns"),
+    }

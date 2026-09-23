@@ -370,6 +370,36 @@ def _describe_node(
     return health, status_label, None, badges
 
 
+def _describe_namespace(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    phase = obj.status.phase if obj.status else None
+    phase = phase or "Unknown"
+    # Terminating usually resolves in seconds; a namespace stuck there is a
+    # real, common problem (finalizers that never complete), so it's flagged
+    # "degraded" rather than a normal transient state -- unlike a Pod's own
+    # "Pending", which is progressing/expected.
+    health: Health = "healthy" if phase == "Active" else "degraded" if phase == "Terminating" else "unknown"
+    return health, phase, None, [Badge(text=phase, variant="status")]
+
+
+def _describe_resource_quota(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # No status/condition concept of its own (used/hard are just numbers, not
+    # a pass/fail signal) -- "unknown" health matches the ConfigMap/Role
+    # precedent. Full hard/used detail is one click away via "Get resourcequota".
+    hard = obj.spec.hard or {}
+    count = len(hard)
+    status_label = f"{count} constraint{'s' if count != 1 else ''}"
+    return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
+
+
+def _describe_limit_range(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # Same "unknown" precedent as ResourceQuota -- a LimitRange is pure
+    # policy/config, no runtime status to report.
+    limits = obj.spec.limits or []
+    count = len(limits)
+    status_label = f"{count} limit{'s' if count != 1 else ''}"
+    return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
+
+
 _DESCRIBERS = {
     "Deployment": lambda obj: _describe_replica_style(obj, "ready_replicas"),
     "StatefulSet": lambda obj: _describe_replica_style(obj, "ready_replicas"),
@@ -391,6 +421,9 @@ _DESCRIBERS = {
     "EndpointSlice": _describe_endpoint_slice,
     "HorizontalPodAutoscaler": _describe_hpa,
     "NetworkPolicy": _describe_network_policy,
+    "Namespace": _describe_namespace,
+    "ResourceQuota": _describe_resource_quota,
+    "LimitRange": _describe_limit_range,
 }
 
 

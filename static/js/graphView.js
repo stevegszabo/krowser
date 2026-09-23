@@ -20,6 +20,10 @@ const RELATION_LABEL = {
 // only for these top-level controller kinds -- never Pod.
 const WORKLOAD_CONTROLLER_KINDS = ['DaemonSet', 'Deployment', 'StatefulSet', 'CronJob', 'Job'];
 
+// Keep in sync with the cytoscape node style's `height` below -- see
+// applyMeasuredHeights() for why this is only a fallback, not the truth.
+const DEFAULT_NODE_HEIGHT = 80;
+
 function edgeColor() {
   return getComputedStyle(document.documentElement).getPropertyValue('--edge-color').trim();
 }
@@ -56,7 +60,7 @@ function graphView() {
             selector: 'node',
             style: {
               width: 224,
-              height: 80,
+              height: DEFAULT_NODE_HEIGHT,
               shape: 'roundrectangle',
               'background-opacity': 0,
               'border-width': 0,
@@ -251,7 +255,10 @@ function graphView() {
             source: e.source,
             target: e.target,
             relation: e.relation,
-            label: RELATION_LABEL[e.relation] || e.relation,
+            // e.label carries a backend-combined label (e.g. "restricts,
+            // allows from") when multiple relations were merged into this
+            // one edge -- see builder.py's _merge_parallel_edges.
+            label: e.label || RELATION_LABEL[e.relation] || e.relation,
           },
         })),
       ];
@@ -265,11 +272,19 @@ function graphView() {
         // ticks): just refresh each element's data in place. cytoscape-node-html-label
         // re-renders a card's content on its `data` event without moving it or
         // touching pan/zoom, so the user's current view is left untouched.
+        // Deliberately not re-measuring heights here (see
+        // applyMeasuredHeights()): the plugin updates the overlay's real DOM
+        // content on a deferred setTimeout(0) in response to this `data`
+        // event, not synchronously, so a remeasure right here would read
+        // stale content anyway. The previous height override isn't cleared
+        // by this refresh, so nothing regresses -- the next full relayout
+        // (any selection change, or a poll tick where the node/edge set
+        // itself changes) re-measures and picks up anything that changed.
         graph.nodes.forEach((n) => this.cy.getElementById(n.id).data({ ...n }));
         graph.edges.forEach((e) =>
           this.cy.getElementById(e.id).data({
             relation: e.relation,
-            label: RELATION_LABEL[e.relation] || e.relation,
+            label: e.label || RELATION_LABEL[e.relation] || e.relation,
           })
         );
         return;
@@ -282,7 +297,8 @@ function graphView() {
       const pan = this.cy.pan();
       const zoom = this.cy.zoom();
       this.cy.elements().remove();
-      this.cy.add(elements);
+      const added = this.cy.add(elements);
+      this.applyMeasuredHeights(added.nodes());
       this.reapplySelectionHighlight();
       this.runLayout(selectionChanged ? undefined : { pan, zoom });
       // Freshly added elements default to visible -- only worth re-filtering
@@ -290,6 +306,39 @@ function graphView() {
       // active; otherwise skip entirely so the pan/zoom preservation above
       // isn't immediately overridden by a fit-to-everything call.
       if (this.$store.app.filterText.trim()) this.applyFilter();
+    },
+
+    // The cytoscape node style's height (DEFAULT_NODE_HEIGHT) is a fixed
+    // guess; the actual visible card is a separately-sized HTML overlay (see
+    // cardTemplate.js / cytoscape-node-html-label) whose height is driven
+    // purely by its content -- a NetworkPolicy's rule-count badges routinely
+    // wrap onto more rows than a Pod's, making it taller than the guess.
+    // Read each node's *real* rendered card height from the DOM right after
+    // it's added (its overlay div is guaranteed to exist synchronously by
+    // then -- the plugin's 'add' handler parses/inserts it inline, no
+    // setTimeout) and store it as a per-node style override, so dagre's
+    // nodeSep math and separateOverlappingSiblings() both operate on the
+    // true height instead of the uniform guess. Floored at
+    // DEFAULT_NODE_HEIGHT so compact cards (the common case) never shrink
+    // below today's baseline spacing.
+    //
+    // getBoundingClientRect() returns screen pixels, i.e. already scaled by
+    // the overlay container's current pan/zoom transform -- but node
+    // heights live in cytoscape's own unscaled graph-unit space (the same
+    // space DEFAULT_NODE_HEIGHT/224 are defined in), so the measurement has
+    // to be divided back out by the current zoom before it's usable, or a
+    // graph left zoomed out from a previous view would systematically
+    // under-report every card's true height here.
+    applyMeasuredHeights(nodes) {
+      const zoom = this.cy.zoom();
+      const heightById = new Map();
+      this.$refs.canvas.querySelectorAll('.krw-card[data-node-id]').forEach((card) => {
+        heightById.set(card.dataset.nodeId, card.getBoundingClientRect().height / zoom);
+      });
+      nodes.forEach((n) => {
+        const measured = heightById.get(n.id());
+        if (measured) n.style('height', Math.max(measured, DEFAULT_NODE_HEIGHT));
+      });
     },
 
     // Runs on `eles` (default: the whole graph) so a filtered subset can be
@@ -305,10 +354,12 @@ function graphView() {
       // single tall vertical column. Ranking top-to-bottom instead spreads
       // them horizontally, which reads much better for a wide, shallow fan-out.
       const isNodesView = this.$store.app.selectedType === 'cluster/nodes';
+      const rankDir = isNodesView ? 'TB' : 'LR';
       const layout = hasEdges
-        ? { name: 'dagre', rankDir: isNodesView ? 'TB' : 'LR', nodeSep: 24, rankSep: 90, animate: false }
+        ? { name: 'dagre', rankDir, nodeSep: 24, rankSep: 90, animate: false }
         : { name: 'grid', condense: true, avoidOverlapPadding: 24, animate: false };
       collection.layout(layout).run();
+      if (hasEdges) this.separateOverlappingSiblings(collection.nodes(), rankDir);
       if (preservedView) {
         // Order matters: cytoscape's zoom(level) setter can itself shift pan
         // to keep the viewport centered, so set zoom first and pan last to
@@ -322,6 +373,45 @@ function graphView() {
         this.cy.fit(eles, 40);
       }
       this.isInitialRender = false;
+    },
+
+    // Two nodes with no edge between them but identical connectivity (e.g.
+    // two NetworkPolicies that each only "restricts" the same single pod,
+    // and nothing else) land on the same dagre rank with no edge for dagre's
+    // own order/tie-break logic to separate them by -- nodeSep only reliably
+    // applies when dagre actually assigns them distinct order slots, which
+    // isn't guaranteed for ties, and can otherwise leave them overlapping or
+    // nearly so. This defensive pass re-spaces any nodes sharing a rank
+    // (grouped with a tolerance, since dagre's own float coordinates for
+    // "the same" rank can differ by a few px) along the cross axis, so two
+    // cards are never closer than nodeSep regardless of what dagre decided.
+    separateOverlappingSiblings(nodes, rankDir) {
+      const NODE_SEP = 24;
+      const RANK_BUCKET = 20;
+      const rankAxis = rankDir === 'TB' ? 'y' : 'x';
+      const crossAxis = rankDir === 'TB' ? 'x' : 'y';
+      const crossSize = rankDir === 'TB' ? 'width' : 'height';
+
+      const groups = new Map();
+      nodes.forEach((n) => {
+        const key = Math.round(n.position(rankAxis) / RANK_BUCKET);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(n);
+      });
+
+      groups.forEach((group) => {
+        if (group.length < 2) return;
+        group.sort((a, b) => a.position(crossAxis) - b.position(crossAxis));
+        for (let i = 1; i < group.length; i++) {
+          const prev = group[i - 1];
+          const curr = group[i];
+          const minCross =
+            prev.position(crossAxis) + prev[crossSize]() / 2 + NODE_SEP + curr[crossSize]() / 2;
+          if (curr.position(crossAxis) < minCross) {
+            curr.position(crossAxis, minCross);
+          }
+        }
+      });
     },
 
     fit() {

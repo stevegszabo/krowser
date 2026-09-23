@@ -394,3 +394,38 @@ def make_network_policy():
         )
 
     return _make
+
+
+@pytest.fixture
+def make_namespace():
+    def _make(uid, name, phase="Active", labels=None):
+        return k8s.V1Namespace(
+            metadata=_meta(uid, name, namespace=None, labels=labels),
+            status=k8s.V1NamespaceStatus(phase=phase),
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_resource_quota():
+    def _make(uid, name, namespace="ns", hard=None):
+        return k8s.V1ResourceQuota(
+            metadata=_meta(uid, name, namespace),
+            spec=k8s.V1ResourceQuotaSpec(hard=hard if hard is not None else {"pods": "10"}),
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_limit_range():
+    def _make(uid, name, namespace="ns", limits=None):
+        return k8s.V1LimitRange(
+            metadata=_meta(uid, name, namespace),
+            spec=k8s.V1LimitRangeSpec(
+                limits=limits if limits is not None else [k8s.V1LimitRangeItem(type="Container")]
+            ),
+        )
+
+    return _make

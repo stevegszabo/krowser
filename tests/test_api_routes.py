@@ -158,6 +158,24 @@ def test_resource_yaml_supports_network_policy(client, monkeypatch, make_network
     assert "name: allow-web" in yaml_text
 
 
+def test_resource_yaml_supports_namespace(client, monkeypatch, make_namespace):
+    ns = make_namespace("ns-1", "team-a")
+    ns.kind = "Namespace"
+    ns.api_version = "v1"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND,
+        "Namespace",
+        lambda mgr, context, namespace, name: ns,
+    )
+
+    res = client.get("/api/resource-yaml", params={"kind": "Namespace", "name": "team-a"})
+
+    assert res.status_code == 200
+    yaml_text = res.json()["yaml"]
+    assert "kind: Namespace" in yaml_text
+    assert "name: team-a" in yaml_text
+
+
 def test_resource_yaml_unknown_kind_is_404(client):
     res = client.get("/api/resource-yaml", params={"kind": "Bogus", "name": "x"})
     assert res.status_code == 404

@@ -281,3 +281,39 @@ def test_network_policy_with_no_policy_types_shows_fallback_label(make_network_p
     node = build_node(policy, "NetworkPolicy", "networkpolicy", True)
 
     assert node.status_label == "No policy types"
+
+
+def test_namespace_active_is_healthy(make_namespace):
+    ns = make_namespace("ns-1", "base-vault", phase="Active")
+
+    node = build_node(ns, "Namespace", "namespace", True)
+
+    assert node.health == "healthy"
+    assert node.status_label == "Active"
+
+
+def test_namespace_terminating_is_degraded(make_namespace):
+    ns = make_namespace("ns-1", "old-namespace", phase="Terminating")
+
+    node = build_node(ns, "Namespace", "namespace", True)
+
+    assert node.health == "degraded"
+    assert node.status_label == "Terminating"
+
+
+def test_resource_quota_reports_unknown_health_with_constraint_count(make_resource_quota):
+    rq = make_resource_quota("rq-1", "compute-quota", hard={"pods": "10", "cpu": "4"})
+
+    node = build_node(rq, "ResourceQuota", "resourcequota", True)
+
+    assert node.health == "unknown"
+    assert node.status_label == "2 constraints"
+
+
+def test_limit_range_reports_unknown_health_with_limit_count(make_limit_range):
+    lr = make_limit_range("lr-1", "defaults", limits=[])
+
+    node = build_node(lr, "LimitRange", "limitrange", True)
+
+    assert node.health == "unknown"
+    assert node.status_label == "0 limits"

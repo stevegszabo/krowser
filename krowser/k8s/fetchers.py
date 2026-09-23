@@ -109,6 +109,28 @@ def list_nodes(mgr: KubeClientManager, context: str | None) -> list[Any]:
     return _call("Node", api.list_node)
 
 
+def list_namespace_objects(mgr: KubeClientManager, context: str | None) -> list[Any]:
+    # Cluster-scoped: no namespace variant exists. Named "_objects" (not just
+    # list_namespaces) to distinguish it from KubeClientManager.list_namespaces
+    # (client.py), which returns plain name strings for the topbar dropdown.
+    api = mgr.core_v1(context)
+    return _call("Namespace", api.list_namespace)
+
+
+def list_resource_quotas(mgr: KubeClientManager, context: str | None, namespace: str | None) -> list[Any]:
+    api = mgr.core_v1(context)
+    if namespace:
+        return _call("ResourceQuota", api.list_namespaced_resource_quota, namespace)
+    return _call("ResourceQuota", api.list_resource_quota_for_all_namespaces)
+
+
+def list_limit_ranges(mgr: KubeClientManager, context: str | None, namespace: str | None) -> list[Any]:
+    api = mgr.core_v1(context)
+    if namespace:
+        return _call("LimitRange", api.list_namespaced_limit_range, namespace)
+    return _call("LimitRange", api.list_limit_range_for_all_namespaces)
+
+
 def list_deployments(mgr: KubeClientManager, context: str | None, namespace: str | None) -> list[Any]:
     api = mgr.apps_v1(context)
     if namespace:
@@ -232,6 +254,9 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "PersistentVolumeClaim": list_persistent_volume_claims,
     "PersistentVolume": lambda mgr, context, namespace: list_persistent_volumes(mgr, context),
     "Node": lambda mgr, context, namespace: list_nodes(mgr, context),
+    "Namespace": lambda mgr, context, namespace: list_namespace_objects(mgr, context),
+    "ResourceQuota": list_resource_quotas,
+    "LimitRange": list_limit_ranges,
     "Deployment": list_deployments,
     "StatefulSet": list_stateful_sets,
     "DaemonSet": list_daemon_sets,

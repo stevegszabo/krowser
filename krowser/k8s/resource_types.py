@@ -19,12 +19,18 @@ class ResourceTypeSpec:
 # the left-pane menu exactly like every other type.
 PROBLEMS_TYPE_ID = "cluster/problems"
 
+# A namespace filter is a genuine narrowing here (fetch_root matches the
+# Namespace by name -- see krowser/graph/builder.py), unlike most other
+# cluster-scoped types where it's a no-op, hence namespaced=True.
+NAMESPACES_TYPE_ID = "cluster/namespaces"
+
 # Order here is the exact left-pane display order from the spec. Consecutive
 # entries sharing a `group` render under one group header on the frontend;
 # entries with `group=None` render as flat top-level rows.
 RESOURCE_TYPES: list[ResourceTypeSpec] = [
     ResourceTypeSpec("cluster/nodes", "Nodes", "Cluster", "node", False, "Node"),
     ResourceTypeSpec(PROBLEMS_TYPE_ID, "Problems", "Cluster", "problem", True, "Problem"),
+    ResourceTypeSpec(NAMESPACES_TYPE_ID, "Namespaces", "Cluster", "namespace", True, "Namespace"),
     ResourceTypeSpec("configmaps", "ConfigMaps", "Config", "configmap", True, "ConfigMap"),
     ResourceTypeSpec("secrets", "Secrets", "Config", "secret", True, "Secret"),
     ResourceTypeSpec("network/ingresses", "Ingresses", "Network", "ingress", True, "Ingress"),
@@ -53,6 +59,8 @@ ICONS_BY_KIND.setdefault("ClusterRole", "clusterrole")
 ICONS_BY_KIND.setdefault("ClusterRoleBinding", "clusterrolebinding")
 ICONS_BY_KIND.setdefault("HorizontalPodAutoscaler", "hpa")
 ICONS_BY_KIND.setdefault("NetworkPolicy", "networkpolicy")
+ICONS_BY_KIND.setdefault("ResourceQuota", "resourcequota")
+ICONS_BY_KIND.setdefault("LimitRange", "limitrange")
 
 
 class UnknownResourceTypeError(KeyError):

@@ -107,6 +107,19 @@ def get_node(mgr: KubeClientManager, context: str | None, name: str) -> Any:
     return _get("Node", mgr.core_v1(context).read_node, name)
 
 
+def get_namespace(mgr: KubeClientManager, context: str | None, name: str) -> Any:
+    # Cluster-scoped: no namespace variant exists.
+    return _get("Namespace", mgr.core_v1(context).read_namespace, name)
+
+
+def get_resource_quota(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
+    return _get("ResourceQuota", mgr.core_v1(context).read_namespaced_resource_quota, name, namespace)
+
+
+def get_limit_range(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
+    return _get("LimitRange", mgr.core_v1(context).read_namespaced_limit_range, name, namespace)
+
+
 def get_deployment(mgr: KubeClientManager, context: str | None, namespace: str, name: str) -> Any:
     return _get("Deployment", mgr.apps_v1(context).read_namespaced_deployment, name, namespace)
 
@@ -174,6 +187,9 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "PersistentVolumeClaim": get_persistent_volume_claim,
     "PersistentVolume": lambda mgr, context, namespace, name: get_persistent_volume(mgr, context, name),
     "Node": lambda mgr, context, namespace, name: get_node(mgr, context, name),
+    "Namespace": lambda mgr, context, namespace, name: get_namespace(mgr, context, name),
+    "ResourceQuota": get_resource_quota,
+    "LimitRange": get_limit_range,
     "Deployment": get_deployment,
     "StatefulSet": get_stateful_set,
     "DaemonSet": get_daemon_set,

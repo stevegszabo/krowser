@@ -450,22 +450,37 @@ def link_networkpolicy_to_pods(world: World) -> list[GraphEdge]:
     return edges
 
 
-def _peer_matches_pod(peer: Any, pod: Any, policy_namespace: str) -> bool:
+def _namespace_labels_by_name(world: World) -> dict[str, dict[str, str]]:
+    """Real Namespace objects (fetched as internal lookup data alongside
+    NetworkPolicy -- see NETWORK_POLICY_RELATED_KINDS) already carry the
+    well-known `kubernetes.io/metadata.name` label Kubernetes auto-populates,
+    plus whatever custom labels a namespace actually has. Falling back to a
+    synthetic single-key dict when a namespace's real object isn't in `world`
+    (some views don't fetch Namespace at all) preserves the old
+    name-only-matching behavior exactly in those cases."""
+    return {ns.metadata.name: (ns.metadata.labels or {}) for ns in world.get("Namespace", [])}
+
+
+def _peer_matches_pod(
+    peer: Any, pod: Any, policy_namespace: str, namespace_labels_by_name: dict[str, dict[str, str]]
+) -> bool:
     """Resolves one NetworkPolicyPeer (an ingress rule's `from` entry or an
     egress rule's `to` entry) against a candidate Pod.
 
     ipBlock peers are skipped entirely -- an external CIDR has no
     Kubernetes object a graph edge could point at. A namespaceSelector is
-    matched against the pod's own namespace using only the well-known,
-    always-present `kubernetes.io/metadata.name` label -- correct for the
-    common "select this namespace by name" pattern, but it won't match a
-    custom namespace label, since real Namespace objects (and their actual
-    labels) aren't fetched anywhere else in this app's graph building either.
+    matched against the pod's own namespace's real labels when its Namespace
+    object was fetched (see _namespace_labels_by_name), falling back to just
+    the well-known `kubernetes.io/metadata.name` label otherwise -- correct
+    for the common "select this namespace by name" pattern even without the
+    real object, but unable to match a custom namespace label in that case.
     """
     if peer.ip_block is not None:
         return False
     if peer.namespace_selector is not None:
-        namespace_labels = {"kubernetes.io/metadata.name": pod.metadata.namespace}
+        namespace_labels = namespace_labels_by_name.get(
+            pod.metadata.namespace, {"kubernetes.io/metadata.name": pod.metadata.namespace}
+        )
         if not _selector_matches(peer.namespace_selector, namespace_labels):
             return False
         # A namespaceSelector with no podSelector alongside it matches every
@@ -499,6 +514,7 @@ def link_networkpolicy_peers(world: World) -> list[GraphEdge]:
     """
     edges: list[GraphEdge] = []
     seen: set[tuple[str, str, str]] = set()
+    namespace_labels_by_name = _namespace_labels_by_name(world)
 
     def _add(policy: Any, pod: Any, relation: str) -> None:
         key = (policy.metadata.uid, pod.metadata.uid, relation)
@@ -518,12 +534,12 @@ def link_networkpolicy_peers(world: World) -> list[GraphEdge]:
         for rule in policy.spec.ingress or []:
             for peer in rule._from or []:
                 for pod in world.get("Pod", []):
-                    if _peer_matches_pod(peer, pod, policy.metadata.namespace):
+                    if _peer_matches_pod(peer, pod, policy.metadata.namespace, namespace_labels_by_name):
                         _add(policy, pod, "allows-from")
         for rule in policy.spec.egress or []:
             for peer in rule.to or []:
                 for pod in world.get("Pod", []):
-                    if _peer_matches_pod(peer, pod, policy.metadata.namespace):
+                    if _peer_matches_pod(peer, pod, policy.metadata.namespace, namespace_labels_by_name):
                         _add(policy, pod, "allows-to")
     return edges
 
@@ -555,6 +571,29 @@ def link_hpa_to_target(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_namespace_to_resourcequota_and_limitrange(world: World) -> list[GraphEdge]:
+    """ResourceQuota/LimitRange declare their namespace via metadata.namespace
+    (a plain field, like every namespaced object), not an ownerReference or a
+    label, so this matches by name rather than following a reference --
+    reusing "owns" for the relation label since, unlike ConfigMap/ClusterRole,
+    a ResourceQuota/LimitRange is never shared across namespaces, so there's
+    no bridging risk in leaving it bidirectional like most other relations."""
+    edges = []
+    for ns in world.get("Namespace", []):
+        for kind in ("ResourceQuota", "LimitRange"):
+            for obj in world.get(kind, []):
+                if obj.metadata.namespace == ns.metadata.name:
+                    edges.append(
+                        GraphEdge(
+                            id=f"owns:{ns.metadata.uid}:{obj.metadata.uid}",
+                            source=ns.metadata.uid,
+                            target=obj.metadata.uid,
+                            relation="owns",
+                        )
+                    )
+    return edges
+
+
 LINKERS = [
     link_owner_references,
     link_ingress_to_services,
@@ -572,6 +611,7 @@ LINKERS = [
     link_clusterrolebinding_to_serviceaccount_subjects,
     link_networkpolicy_to_pods,
     link_networkpolicy_peers,
+    link_namespace_to_resourcequota_and_limitrange,
     link_hpa_to_target,
 ]
 
