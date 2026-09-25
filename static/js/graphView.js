@@ -43,7 +43,7 @@ function graphView() {
     cy: null,
     panMode: true,
     zoomPct: 100,
-    legendOpen: true,
+    legendOpen: false,
     hiddenKinds: {},
     lastSelectionKey: null,
     // The very first graph the app renders after loading defaults to a

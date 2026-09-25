@@ -310,6 +310,12 @@
           </div>
           <template x-if="viewMode === 'yaml'">
             <div class="krw-yaml-toolbar">
+              <template x-if="dataMap !== null">
+                <div class="krw-view-toggle">
+                  <button :class="{ active: yamlViewMode === 'tree' }" @click="yamlViewMode = 'tree'">Tree</button>
+                  <button :class="{ active: yamlViewMode === 'table' }" @click="yamlViewMode = 'table'">Table</button>
+                </div>
+              </template>
               <button class="krw-exec-run-btn" @click="copyYaml()" :disabled="!yamlText">Copy</button>
               <button class="krw-exec-run-btn" @click="downloadYaml()" :disabled="!yamlText">Download</button>
               <span class="krw-exec-status" x-show="yamlCopyStatus" x-text="yamlCopyStatus"></span>
@@ -366,7 +372,7 @@
             <template x-if="error">
               <div class="krw-detail-message krw-detail-error" x-text="error"></div>
             </template>
-            <template x-if="!loading && !error && viewMode === 'yaml' && rulesTable === null">
+            <template x-if="!loading && !error && viewMode === 'yaml' && rulesTable === null && (dataMap === null || yamlViewMode === 'tree')">
               <div class="krw-yaml-tree" x-html="treeHtml" @click="handleTreeClick($event)"></div>
             </template>
             <template x-if="!loading && !error && viewMode === 'yaml' && rulesTable !== null">
@@ -395,6 +401,31 @@
                               <span class="krw-badge krw-rules-verb" x-text="verb"></span>
                             </template>
                           </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </template>
+              </div>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'yaml' && dataMap !== null && yamlViewMode === 'table'">
+              <div class="krw-detail-table krw-yaml-table">
+                <template x-if="dataTableRows.length === 0">
+                  <div class="krw-detail-message">No data.</div>
+                </template>
+                <template x-if="dataTableRows.length > 0">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Key</th>
+                        <th>Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="row in dataTableRows" :key="row.key">
+                        <tr>
+                          <td x-text="row.key"></td>
+                          <td class="krw-data-table-value" x-text="row.value"></td>
                         </tr>
                       </template>
                     </tbody>

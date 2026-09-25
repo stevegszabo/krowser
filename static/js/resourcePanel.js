@@ -9,6 +9,12 @@ const DETAIL_PANE_MAX_RATIO = 0.8;
 // reads far easier as a table than nested under nine layers of YAML tree.
 const RULES_TABLE_KINDS = ['Role', 'ClusterRole'];
 
+// These two kinds offer a Tree/Table toggle (unlike RULES_TABLE_KINDS above,
+// which forces the table with no way back) -- a ConfigMap/Secret's `data`
+// map is usually what a viewer actually wants, but the raw tree is still
+// useful (e.g. to see metadata/labels), so both stay available.
+const DATA_TABLE_KINDS = ['ConfigMap', 'Secret'];
+
 // Builds one log line's HTML: every occurrence of `filter` (plain substring,
 // case-insensitive) wrapped in <mark>, everything else escaped as text.
 // Operates on raw text and escapes each piece as it's assembled, rather than
@@ -40,6 +46,8 @@ function resourcePanel() {
     yamlCopyStatus: '',
     treeHtml: '',
     rulesTable: null,
+    dataMap: null,
+    yamlViewMode: 'tree',
     describeSections: [],
     eventsRows: [],
     logsText: '',
@@ -135,6 +143,8 @@ function resourcePanel() {
         this.yamlCopyStatus = '';
         this.treeHtml = '';
         this.rulesTable = null;
+        this.dataMap = null;
+        this.yamlViewMode = 'tree';
         this.describeSections = [];
         this.eventsRows = [];
         this.logsText = '';
@@ -244,6 +254,10 @@ function resourcePanel() {
           // classes left on the previous resource's tree DOM.
           this.treeHtml = renderYamlTree(res.data);
           this.rulesTable = RULES_TABLE_KINDS.includes(selected.kind) ? res.data.rules || [] : null;
+          this.dataMap = DATA_TABLE_KINDS.includes(selected.kind)
+            ? { data: res.data.data || {}, binaryData: res.data.binaryData || {} }
+            : null;
+          this.yamlViewMode = 'tree';
         }
       } catch (e) {
         if (requestId !== this.requestSeq) return;
@@ -251,6 +265,8 @@ function resourcePanel() {
         this.yamlText = '';
         this.treeHtml = '';
         this.rulesTable = null;
+        this.dataMap = null;
+        this.yamlViewMode = 'tree';
         this.describeSections = [];
         this.eventsRows = [];
         this.logsText = '';
@@ -477,6 +493,52 @@ function resourcePanel() {
       const row = event.target.closest('.krw-tree-row[data-toggle]');
       if (!row) return;
       row.closest('.krw-tree-node').classList.toggle('collapsed');
+    },
+
+    // Flattens dataMap's { data, binaryData } into one array of {key, value}
+    // rows for the Table view -- Secret's data values are decoded (falling
+    // back to a placeholder for genuine binary content), ConfigMap's data
+    // values are already plain text, and binaryData entries (ConfigMap
+    // only) always show a byte count rather than attempting to render raw
+    // bytes as text.
+    get dataTableRows() {
+      if (!this.dataMap) return [];
+      const kind = this.$store.app.selectedResource ? this.$store.app.selectedResource.kind : null;
+      const rows = [];
+      for (const [key, value] of Object.entries(this.dataMap.data || {})) {
+        if (kind === 'Secret') {
+          const decoded = this.decodedSecretValue(value);
+          rows.push({ key, value: decoded !== null ? decoded : '(binary data)' });
+        } else {
+          rows.push({ key, value });
+        }
+      }
+      for (const [key, value] of Object.entries(this.dataMap.binaryData || {})) {
+        let byteLength = value.length;
+        try {
+          byteLength = atob(value).length;
+        } catch (e) {
+          // fall back to the base64 string's own length above
+        }
+        rows.push({ key, value: `(binary, ${byteLength} bytes)` });
+      }
+      return rows;
+    },
+
+    // Secret .data values are always base64 (the API never returns the
+    // write-only stringData field back), unlike ConfigMap's .data which is
+    // already plain text -- decode for the Table view so it's actually
+    // readable instead of an opaque base64 blob. Some values are genuine
+    // binary (e.g. a TLS keystore), which atob() happily decodes into bytes
+    // that aren't valid UTF-8 -- decodeURIComponent(escape(...)) throws in
+    // that case, and the caller falls back to a "(binary data)" placeholder
+    // rather than rendering mojibake.
+    decodedSecretValue(value) {
+      try {
+        return decodeURIComponent(escape(atob(value)));
+      } catch (e) {
+        return null;
+      }
     },
 
     // yamlText always holds the raw fetched YAML, even when rulesTable is

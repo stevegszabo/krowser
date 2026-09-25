@@ -775,6 +775,31 @@ html, body {
   flex-shrink: 0;
 }
 
+.krw-view-toggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.krw-view-toggle button {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border: none;
+  background: var(--card-bg);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.krw-view-toggle button + button {
+  border-left: 1px solid var(--line);
+}
+.krw-view-toggle button:hover { background: var(--hover-bg); }
+.krw-view-toggle button.active {
+  background: var(--active-bg);
+  color: var(--teal-dark);
+}
+
 .krw-vulnscan {
   padding: 14px;
 }
@@ -990,6 +1015,15 @@ html, body {
   display: inline-block;
   margin: 1px 3px 1px 0;
   font-size: 12px;
+}
+
+/* ConfigMap/Secret data-table values (index.html's dataMap/Table branch) --
+   a config file's contents or a long cert/base64 string need to wrap inside
+   the cell instead of forcing the table wider than the pane. */
+.krw-data-table-value {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .krw-logs {
