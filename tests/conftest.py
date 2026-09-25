@@ -166,7 +166,7 @@ def make_pvc():
 
 @pytest.fixture
 def make_pv():
-    def _make(uid, name, phase="Bound", claim_ref_namespace=None, claim_ref_name=None):
+    def _make(uid, name, phase="Bound", claim_ref_namespace=None, claim_ref_name=None, storage_class=None):
         claim_ref = None
         if claim_ref_namespace:
             claim_ref = k8s.V1ObjectReference(namespace=claim_ref_namespace, name=claim_ref_name)
@@ -176,6 +176,7 @@ def make_pv():
                 capacity={"storage": "1Gi"},
                 claim_ref=claim_ref,
                 persistent_volume_reclaim_policy="Delete",
+                storage_class_name=storage_class,
             ),
             status=k8s.V1PersistentVolumeStatus(phase=phase),
         )
@@ -474,6 +475,45 @@ def make_volume_attachment():
                 attached=attached,
                 attach_error=attach_error,
                 detach_error=detach_error,
+            ),
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_storage_class():
+    def _make(uid, name, provisioner="csi.example.com", reclaim_policy=None, volume_binding_mode=None):
+        return k8s.V1StorageClass(
+            metadata=_meta(uid, name, namespace=None),
+            provisioner=provisioner,
+            reclaim_policy=reclaim_policy,
+            volume_binding_mode=volume_binding_mode,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_crd():
+    def _make(
+        uid,
+        name,
+        group="example.com",
+        kind="Widget",
+        plural="widgets",
+        scope="Namespaced",
+        versions=None,
+    ):
+        if versions is None:
+            versions = [k8s.V1CustomResourceDefinitionVersion(name="v1", served=True, storage=True)]
+        return k8s.V1CustomResourceDefinition(
+            metadata=_meta(uid, name, namespace=None),
+            spec=k8s.V1CustomResourceDefinitionSpec(
+                group=group,
+                names=k8s.V1CustomResourceDefinitionNames(kind=kind, plural=plural),
+                scope=scope,
+                versions=versions,
             ),
         )
 

@@ -50,6 +50,22 @@ class AttrDict:
         return _wrap(value)
 
 
+def resolve_served_version(crd: Any) -> str:
+    """Picks one version to fetch a CRD's instances at. A CRD can serve
+    several versions at once; the storage version (exactly one, guaranteed
+    by the API server) is the authoritative on-disk representation and, in
+    practice, is served whenever it exists -- but fall back to the first
+    served version on the rare chance it isn't, rather than erroring."""
+    versions = crd.spec.versions or []
+    storage_version = next((v for v in versions if v.storage and v.served), None)
+    if storage_version:
+        return storage_version.name
+    served = next((v for v in versions if v.served), None)
+    if served:
+        return served.name
+    raise ValueError(f"CRD {crd.metadata.name!r} has no served version")
+
+
 def list_custom_resources(
     mgr: KubeClientManager, context: str | None, namespace: str | None, group: str, version: str, plural: str
 ) -> list[AttrDict]:

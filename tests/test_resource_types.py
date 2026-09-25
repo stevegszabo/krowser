@@ -10,6 +10,7 @@ def test_resource_type_order_matches_spec():
         "Nodes",
         "Problems",
         "Namespaces",
+        "Custom Resources",
         "ConfigMaps",
         "Secrets",
         "Ingresses",
@@ -31,6 +32,7 @@ def test_groups_match_spec():
     assert groups["Problems"] == "Cluster"
     assert groups["Nodes"] == "Cluster"
     assert groups["Namespaces"] == "Cluster"
+    assert groups["Custom Resources"] == "Cluster"
     assert groups["ConfigMaps"] == "Config"
     assert groups["Secrets"] == "Config"
     assert groups["Ingresses"] == "Network"

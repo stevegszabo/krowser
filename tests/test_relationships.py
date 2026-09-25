@@ -19,6 +19,7 @@ from krowser.graph.relationships import (
     link_poddisruptionbudget_to_pods,
     link_pvc_to_pv,
     link_volumeattachment_to_pv,
+    link_storage_to_storageclass,
     link_rolebinding_to_role_or_clusterrole,
     link_rolebinding_to_serviceaccount_subjects,
     link_service_to_endpointslices,
@@ -120,6 +121,27 @@ def test_volumeattachment_attaches_to_named_pv(make_volume_attachment, make_pv):
     edges = link_volumeattachment_to_pv(world)
 
     assert [(e.source, e.target, e.relation) for e in edges] == [("va-1", "pv-1", "attaches")]
+
+
+def test_pvc_and_pv_use_matching_storageclass_by_name(make_pvc, make_pv, make_storage_class):
+    pvc = make_pvc("pvc-1", "data", storage_class="fast")
+    other_pvc = make_pvc("pvc-2", "data2", storage_class="slow")
+    pv = make_pv("pv-1", "pv-1", storage_class="fast")
+    fast = make_storage_class("sc-1", "fast")
+    slow = make_storage_class("sc-2", "slow")
+
+    world = {
+        "PersistentVolumeClaim": [pvc, other_pvc],
+        "PersistentVolume": [pv],
+        "StorageClass": [fast, slow],
+    }
+    edges = link_storage_to_storageclass(world)
+
+    assert {(e.source, e.target, e.relation) for e in edges} == {
+        ("pvc-1", "sc-1", "uses"),
+        ("pvc-2", "sc-2", "uses"),
+        ("pv-1", "sc-1", "uses"),
+    }
 
 
 def test_pod_runs_on_matching_node(make_pod, make_node):

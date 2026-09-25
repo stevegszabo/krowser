@@ -4,7 +4,9 @@ from kubernetes import client as k8s
 
 import krowser.graph.builder as builder_module
 from krowser.graph.builder import GraphBuilder
+from krowser.k8s.custom_resources import AttrDict
 from krowser.k8s.metrics import Usage
+from krowser.k8s.resource_types import CUSTOM_RESOURCES_TYPE_ID
 
 
 # Every Kind the builder might look up across any resource-type view. Tests only
@@ -15,7 +17,7 @@ ALL_KINDS = [
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
     "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
     "ClusterRoleBinding", "HorizontalPodAutoscaler", "NetworkPolicy", "Namespace",
-    "ResourceQuota", "LimitRange", "PodDisruptionBudget", "VolumeAttachment",
+    "ResourceQuota", "LimitRange", "PodDisruptionBudget", "VolumeAttachment", "StorageClass",
 ]
 
 
@@ -174,6 +176,51 @@ def test_deployment_graph_includes_volumeattachment_via_pvc_pv_chain(
 
     relations = {(e.source, e.target, e.relation) for e in graph.edges}
     assert ("va-1", "pv-1", "attaches") in relations
+
+
+def test_shared_storageclass_does_not_bridge_unrelated_pod_into_view(
+    monkeypatch, make_deployment, make_replica_set, make_pod, make_pvc, make_storage_class
+):
+    # Same bridging concern as the equivalent ConfigMap test -- StorageClass
+    # reuses "uses" specifically because a default StorageClass is commonly
+    # shared across every PVC in a cluster, just like a shared ConfigMap.
+    deploy = make_deployment("dep-1", "web")
+    rs = make_replica_set(
+        "rs-1", "web-abc",
+        owner_refs=[k8s.V1OwnerReference(kind="Deployment", name="web", uid="dep-1", api_version="apps/v1")],
+    )
+    pod = make_pod(
+        "pod-1", "web-abc-xyz",
+        owner_refs=[k8s.V1OwnerReference(kind="ReplicaSet", name="web-abc", uid="rs-1", api_version="apps/v1")],
+        volumes=[
+            k8s.V1Volume(
+                name="data", persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name="web-data")
+            ),
+        ],
+    )
+    pvc = make_pvc("pvc-1", "web-data", storage_class="default")
+    default_sc = make_storage_class("sc-1", "default")
+    unrelated_pvc = make_pvc("pvc-2", "other-data", storage_class="default")
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Deployment": [deploy],
+            "ReplicaSet": [rs],
+            "Pod": [pod],
+            "PersistentVolumeClaim": [pvc, unrelated_pvc],
+            "StorageClass": [default_sc],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/deployments", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"dep-1", "rs-1", "pod-1", "pvc-1", "sc-1"}
+    assert "pvc-2" not in node_ids
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("pvc-1", "sc-1", "uses") in relations
 
 
 def test_shared_configmap_does_not_bridge_unrelated_pod_into_view(
@@ -847,3 +894,108 @@ def test_policies_view_broad_policy_shows_every_pod_it_restricts(
     graph = GraphBuilder(mgr=None).build("network/policies", namespace="ns", context=None)
 
     assert {n.id for n in graph.nodes} == {"np-1", "pod-1", "pod-2"}
+
+
+def _custom_resource(uid, name, namespace=None):
+    metadata = {"uid": uid, "name": name, "creationTimestamp": "2026-01-15T10:00:00Z"}
+    if namespace:
+        metadata["namespace"] = namespace
+    return AttrDict({"metadata": metadata})
+
+
+def test_custom_resources_view_empty_when_no_crd_selected():
+    graph = GraphBuilder(mgr=None).build(CUSTOM_RESOURCES_TYPE_ID, namespace="ns", context=None, crd=None)
+
+    assert graph.nodes == []
+    assert graph.edges == []
+    assert graph.resource_count == 0
+    assert graph.truncated is False
+
+
+def test_custom_resources_view_fetches_instances_of_selected_crd(monkeypatch, make_crd):
+    crd = make_crd("crd-1", "widgets.example.com", group="example.com", kind="Widget", plural="widgets")
+    monkeypatch.setattr(builder_module, "get_crd", lambda mgr, context, name: crd)
+
+    captured = {}
+
+    def fake_list(mgr, context, namespace, group, version, plural):
+        captured.update(namespace=namespace, group=group, version=version, plural=plural)
+        return [_custom_resource("w-1", "a", "ns"), _custom_resource("w-2", "b", "ns")]
+
+    monkeypatch.setattr(builder_module, "list_custom_resources", fake_list)
+
+    graph = GraphBuilder(mgr=None).build(
+        CUSTOM_RESOURCES_TYPE_ID, namespace="ns", context=None, crd="widgets.example.com"
+    )
+
+    assert captured == {"namespace": "ns", "group": "example.com", "version": "v1", "plural": "widgets"}
+    assert {n.id for n in graph.nodes} == {"w-1", "w-2"}
+    assert all(n.kind == "Widget" for n in graph.nodes)
+    assert all(n.icon == "crd" for n in graph.nodes)
+    assert all(n.crd == "widgets.example.com" for n in graph.nodes)
+    assert all(n.is_root for n in graph.nodes)
+    assert graph.edges == []
+
+
+def test_custom_resources_view_ignores_namespace_for_cluster_scoped_crd(monkeypatch, make_crd):
+    crd = make_crd("crd-1", "widgets.example.com", scope="Cluster")
+    monkeypatch.setattr(builder_module, "get_crd", lambda mgr, context, name: crd)
+
+    captured = {}
+
+    def fake_list(mgr, context, namespace, group, version, plural):
+        captured["namespace"] = namespace
+        return []
+
+    monkeypatch.setattr(builder_module, "list_custom_resources", fake_list)
+
+    GraphBuilder(mgr=None).build(CUSTOM_RESOURCES_TYPE_ID, namespace="ns", context=None, crd="widgets.example.com")
+
+    assert captured["namespace"] is None
+
+
+def test_custom_resources_view_picks_storage_and_served_version(monkeypatch, make_crd):
+    crd = make_crd(
+        "crd-1",
+        "widgets.example.com",
+        versions=[
+            k8s.V1CustomResourceDefinitionVersion(name="v1alpha1", served=True, storage=False),
+            k8s.V1CustomResourceDefinitionVersion(name="v1", served=True, storage=True),
+        ],
+    )
+    monkeypatch.setattr(builder_module, "get_crd", lambda mgr, context, name: crd)
+
+    captured = {}
+
+    def fake_list(mgr, context, namespace, group, version, plural):
+        captured["version"] = version
+        return []
+
+    monkeypatch.setattr(builder_module, "list_custom_resources", fake_list)
+
+    GraphBuilder(mgr=None).build(CUSTOM_RESOURCES_TYPE_ID, namespace="ns", context=None, crd="widgets.example.com")
+
+    assert captured["version"] == "v1"
+
+
+def test_custom_resources_view_truncates_when_over_max_graph_nodes(monkeypatch, make_crd):
+    from dataclasses import replace
+
+    monkeypatch.setattr(builder_module, "settings", replace(builder_module.settings, max_graph_nodes=2))
+    crd = make_crd("crd-1", "widgets.example.com")
+    monkeypatch.setattr(builder_module, "get_crd", lambda mgr, context, name: crd)
+    monkeypatch.setattr(
+        builder_module,
+        "list_custom_resources",
+        lambda mgr, context, namespace, group, version, plural: [
+            _custom_resource(f"w-{i}", f"widget-{i}", "ns") for i in range(5)
+        ],
+    )
+
+    graph = GraphBuilder(mgr=None).build(
+        CUSTOM_RESOURCES_TYPE_ID, namespace="ns", context=None, crd="widgets.example.com"
+    )
+
+    assert graph.resource_count == 5
+    assert graph.truncated is True
+    assert len(graph.nodes) == 2

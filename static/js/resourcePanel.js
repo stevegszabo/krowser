@@ -251,6 +251,7 @@ function resourcePanel() {
             namespace: selected.namespace,
             name: selected.name,
             context: this.$store.app.context,
+            crd: selected.crd,
           });
           if (requestId !== this.requestSeq) return;
           this.yamlText = res.yaml;
@@ -599,6 +600,7 @@ function resourcePanel() {
       const params = new URLSearchParams({ kind: selected.kind, name: selected.name });
       if (selected.namespace) params.set('namespace', selected.namespace);
       if (this.$store.app.context) params.set('context', this.$store.app.context);
+      if (selected.crd) params.set('crd', selected.crd);
       const link = document.createElement('a');
       link.href = `/api/resource-yaml-download?${params.toString()}`;
       document.body.appendChild(link);

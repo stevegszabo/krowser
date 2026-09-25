@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from kubernetes import client as k8s
 
+from krowser.k8s.custom_resources import AttrDict
 from krowser.k8s.metrics import Usage
 from krowser.k8s.status import build_node
 
@@ -370,3 +371,59 @@ def test_volume_attachment_with_attach_error_is_degraded(make_volume_attachment)
 
     assert node.health == "degraded"
     assert node.status_label == "Attach error"
+
+
+def test_storage_class_reports_unknown_health_with_provisioner_and_reclaim_policy(make_storage_class):
+    sc = make_storage_class("sc-1", "fast", provisioner="csi.example.com", reclaim_policy="Retain")
+
+    node = build_node(sc, "StorageClass", "storageclass", True)
+
+    assert node.health == "unknown"
+    assert node.status_label == "csi.example.com"
+    assert any(b.text == "Reclaim: Retain" for b in node.badges)
+
+
+def test_storage_class_defaults_reclaim_policy_to_delete(make_storage_class):
+    sc = make_storage_class("sc-1", "fast", reclaim_policy=None)
+
+    node = build_node(sc, "StorageClass", "storageclass", True)
+
+    assert any(b.text == "Reclaim: Delete" for b in node.badges)
+
+
+def test_custom_resource_kind_falls_back_to_unknown_health_and_carries_crd_name():
+    # A custom resource instance's Kind is arbitrary (from a CRD) and never
+    # registered in _DESCRIBERS -- build_node must fall back to
+    # _describe_custom_resource instead of raising KeyError, and thread the
+    # crd field the frontend needs to fetch this object's raw YAML later.
+    obj = AttrDict(
+        {
+            "metadata": {
+                "uid": "cr-1",
+                "name": "my-widget",
+                "namespace": "ns",
+                "creationTimestamp": "2026-01-15T10:00:00Z",
+            }
+        }
+    )
+
+    node = build_node(obj, "Widget", "crd", True, crd="widgets.example.com")
+
+    assert node.health == "unknown"
+    assert node.status_label == "Custom resource"
+    assert node.crd == "widgets.example.com"
+    assert node.kind == "Widget"
+
+
+def test_custom_resource_surfaces_first_condition_without_using_it_for_health():
+    obj = AttrDict(
+        {
+            "metadata": {"uid": "cr-1", "name": "my-widget", "creationTimestamp": "2026-01-15T10:00:00Z"},
+            "status": {"conditions": [{"type": "Ready", "status": "False"}]},
+        }
+    )
+
+    node = build_node(obj, "Widget", "crd", True, crd="widgets.example.com")
+
+    assert node.health == "unknown"
+    assert node.status_label == "Ready: False"

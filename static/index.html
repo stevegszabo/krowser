@@ -132,6 +132,19 @@
           <button @click="zoomIn()" title="Zoom in">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="7"/><path d="M21 21l-5.5-5.5M10 7v6M7 10h6"/></svg>
           </button>
+          <template x-if="$store.app.selectedType === 'cluster/customresources'">
+            <div class="krw-crd-picker">
+              <select
+                x-model="$store.app.selectedCrd"
+                @change="onCrdChange()"
+              >
+                <option value="" disabled>Pick a Custom Resource&hellip;</option>
+                <template x-for="c in $store.app.crds" :key="c.name">
+                  <option :value="c.name" x-text="c.kind + ' (' + c.group + ')'"></option>
+                </template>
+              </select>
+            </div>
+          </template>
           <div class="krw-toolbar-sep"></div>
           <input
             type="text"

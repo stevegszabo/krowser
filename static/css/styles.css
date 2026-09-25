@@ -431,6 +431,21 @@ html, body {
   border-color: var(--teal);
 }
 
+.krw-crd-picker select {
+  max-width: 220px;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--card-bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+.krw-crd-picker select:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
 /* Overlay states */
 .krw-overlay-center {
   position: absolute;

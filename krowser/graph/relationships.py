@@ -221,6 +221,32 @@ def link_volumeattachment_to_pv(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_storage_to_storageclass(world: World) -> list[GraphEdge]:
+    """A PersistentVolumeClaim/PersistentVolume references its StorageClass
+    by name via spec.storageClassName. Reuses "uses" (the same relation as
+    Pod->ConfigMap/Secret) rather than a new one -- a StorageClass is
+    exactly the same kind of commonly-shared hub (e.g. a cluster's default
+    StorageClass, referenced by every PVC that doesn't set one explicitly),
+    so it needs the same forward-only reachability treatment _FORWARD_ONLY_RELATIONS
+    already gives "uses" in builder.py, with no changes needed there."""
+    classes_by_name = {sc.metadata.name: sc for sc in world.get("StorageClass", [])}
+    edges = []
+    for kind in ("PersistentVolumeClaim", "PersistentVolume"):
+        for obj in world.get(kind, []):
+            class_name = obj.spec.storage_class_name
+            sc = classes_by_name.get(class_name) if class_name else None
+            if sc:
+                edges.append(
+                    GraphEdge(
+                        id=f"uses:{obj.metadata.uid}:{sc.metadata.uid}",
+                        source=obj.metadata.uid,
+                        target=sc.metadata.uid,
+                        relation="uses",
+                    )
+                )
+    return edges
+
+
 def link_pod_to_node(world: World) -> list[GraphEdge]:
     """Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry
     a real ownerReference back to their Node, which link_owner_references
@@ -650,6 +676,7 @@ LINKERS = [
     link_pod_to_pvc,
     link_pvc_to_pv,
     link_volumeattachment_to_pv,
+    link_storage_to_storageclass,
     link_pod_to_node,
     link_pod_to_configmap,
     link_pod_to_secret,

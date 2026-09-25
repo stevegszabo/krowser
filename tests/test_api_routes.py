@@ -4,6 +4,7 @@ from kubernetes import client as k8s
 from kubernetes.client import ApiClient
 
 import krowser.api.routes_resource as routes_resource_module
+import krowser.api.routes_resources as routes_resources_module
 from krowser.api.deps import get_kube_client_manager
 from krowser.k8s.client import ContextInfo
 from krowser.k8s.fetchers import ResourceAccessError
@@ -216,6 +217,27 @@ def test_resource_yaml_supports_volume_attachment(client, monkeypatch, make_volu
     yaml_text = res.json()["yaml"]
     assert "kind: VolumeAttachment" in yaml_text
     assert "name: csi-attach-1" in yaml_text
+
+
+def test_resource_yaml_supports_storage_class(client, monkeypatch, make_storage_class):
+    sc = make_storage_class("sc-1", "fast")
+    sc.kind = "StorageClass"
+    sc.api_version = "storage.k8s.io/v1"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND,
+        "StorageClass",
+        lambda mgr, context, namespace, name: sc,
+    )
+
+    res = client.get(
+        "/api/resource-yaml",
+        params={"kind": "StorageClass", "name": "fast"},
+    )
+
+    assert res.status_code == 200
+    yaml_text = res.json()["yaml"]
+    assert "kind: StorageClass" in yaml_text
+    assert "name: fast" in yaml_text
 
 
 def test_resource_yaml_unknown_kind_is_404(client):
@@ -537,3 +559,41 @@ def test_workload_kubescan_maps_scan_failed_to_502(client, monkeypatch):
     )
 
     assert res.status_code == 502
+
+
+def test_crds_endpoint_lists_installed_crds_sorted_by_kind(client, monkeypatch, make_crd):
+    zebra = make_crd("crd-1", "zebras.example.com", group="example.com", kind="Zebra", scope="Namespaced")
+    apple = make_crd("crd-2", "apples.example.com", group="fruit.io", kind="Apple", scope="Cluster")
+    monkeypatch.setattr(routes_resources_module, "list_crds", lambda mgr, context: [zebra, apple])
+
+    res = client.get("/api/crds")
+
+    assert res.status_code == 200
+    assert res.json()["crds"] == [
+        {"name": "apples.example.com", "kind": "Apple", "group": "fruit.io", "scope": "Cluster"},
+        {"name": "zebras.example.com", "kind": "Zebra", "group": "example.com", "scope": "Namespaced"},
+    ]
+
+
+def test_resource_yaml_supports_custom_resource(client, monkeypatch, make_crd):
+    crd = make_crd("crd-1", "widgets.example.com", group="example.com", kind="Widget", plural="widgets")
+    monkeypatch.setattr(routes_resource_module, "get_crd", lambda mgr, context, name: crd)
+    monkeypatch.setattr(
+        routes_resource_module,
+        "get_custom_resource",
+        lambda mgr, context, namespace, name, group, version, plural: {
+            "apiVersion": f"{group}/{version}",
+            "kind": "Widget",
+            "metadata": {"name": name, "namespace": namespace},
+        },
+    )
+
+    res = client.get(
+        "/api/resource-yaml",
+        params={"kind": "Widget", "name": "my-widget", "namespace": "ns", "crd": "widgets.example.com"},
+    )
+
+    assert res.status_code == 200
+    yaml_text = res.json()["yaml"]
+    assert "kind: Widget" in yaml_text
+    assert "name: my-widget" in yaml_text

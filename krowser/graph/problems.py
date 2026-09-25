@@ -4,7 +4,7 @@ from krowser.graph.builder import fetch_root
 from krowser.graph.models import Graph, GraphNode
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.metrics import fetch_node_metrics, fetch_pod_metrics
-from krowser.k8s.resource_types import ICONS_BY_KIND, RESOURCE_TYPES, PROBLEMS_TYPE_ID
+from krowser.k8s.resource_types import ICONS_BY_KIND, RESOURCE_TYPES, PROBLEMS_TYPE_ID, CUSTOM_RESOURCES_TYPE_ID
 from krowser.k8s.status import build_node
 
 # "degraded" is an unambiguous failure (CrashLoopBackOff, a Failed Job, a Lost
@@ -29,7 +29,7 @@ def find_problems(mgr: KubeClientManager, context: str | None, namespace: str | 
     """
     problems: list[GraphNode] = []
     for rt in RESOURCE_TYPES:
-        if rt.id == PROBLEMS_TYPE_ID:
+        if rt.id in (PROBLEMS_TYPE_ID, CUSTOM_RESOURCES_TYPE_ID):
             continue
 
         objects: list[Any] = fetch_root(mgr, context, namespace, rt.id, rt)

@@ -160,6 +160,10 @@ function graphView() {
             namespace: data.namespace,
             name: data.name,
             containers,
+            // Only set for a custom resource instance -- see GraphNode.crd
+            // and resourcePanel.js's YAML fetch, which needs it to resolve
+            // an arbitrary CRD Kind back to a group/version/plural server-side.
+            crd: data.crd || null,
           },
         };
       });

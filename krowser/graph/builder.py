@@ -5,9 +5,17 @@ from krowser.graph.expansions import GRAPH_EXPANSIONS, GraphExpansion
 from krowser.graph.models import Graph, GraphEdge, GraphNode
 from krowser.graph.relationships import build_edges
 from krowser.k8s.client import KubeClientManager
+from krowser.k8s.custom_resources import list_custom_resources, resolve_served_version
 from krowser.k8s.fetchers import FETCHERS_BY_KIND
+from krowser.k8s.getters import get_crd
 from krowser.k8s.metrics import fetch_node_metrics, fetch_pod_metrics
-from krowser.k8s.resource_types import NAMESPACES_TYPE_ID, ICONS_BY_KIND, ResourceTypeSpec, get_resource_type
+from krowser.k8s.resource_types import (
+    CUSTOM_RESOURCES_TYPE_ID,
+    NAMESPACES_TYPE_ID,
+    ICONS_BY_KIND,
+    ResourceTypeSpec,
+    get_resource_type,
+)
 from krowser.k8s.status import build_node
 
 
@@ -186,7 +194,10 @@ class GraphBuilder:
     def __init__(self, mgr: KubeClientManager):
         self._mgr = mgr
 
-    def build(self, type_id: str, namespace: str | None, context: str | None) -> Graph:
+    def build(self, type_id: str, namespace: str | None, context: str | None, crd: str | None = None) -> Graph:
+        if type_id == CUSTOM_RESOURCES_TYPE_ID:
+            return self._build_custom_resource_graph(crd, namespace, context)
+
         rt = get_resource_type(type_id)
         expansion = GRAPH_EXPANSIONS.get(type_id, GraphExpansion(()))
 
@@ -237,3 +248,39 @@ class GraphBuilder:
         edges = _merge_parallel_edges(edges)
 
         return Graph(nodes=nodes, edges=edges, resource_count=resource_count, truncated=truncated)
+
+    def _build_custom_resource_graph(
+        self, crd_name: str | None, namespace: str | None, context: str | None
+    ) -> Graph:
+        # Nothing picked yet -- the frontend's CRD picker hasn't been used
+        # this session (or the page just loaded on this type). Not an error:
+        # an empty graph renders the same "No matching resources" empty
+        # state every other type-with-no-instances already shows.
+        if not crd_name:
+            return Graph(nodes=[], edges=[], resource_count=0, truncated=False)
+
+        crd = get_crd(self._mgr, context, crd_name)
+        kind = crd.spec.names.kind
+        group = crd.spec.group
+        plural = crd.spec.names.plural
+        namespaced = crd.spec.scope == "Namespaced"
+        version = resolve_served_version(crd)
+
+        root_objects = list_custom_resources(
+            self._mgr, context, namespace if namespaced else None, group, version, plural
+        )
+        resource_count = len(root_objects)
+        truncated = False
+        if resource_count > settings.max_graph_nodes:
+            truncated = True
+            root_objects = sorted(root_objects, key=lambda o: o.metadata.name)[: settings.max_graph_nodes]
+
+        # No relationship derivation here -- an arbitrary CRD's schema has no
+        # generically-knowable references (unlike e.g. a Pod's well-known
+        # volume/serviceAccountName fields), and this view only ever fetches
+        # the one selected CRD's own instances, so even a real ownerReference
+        # to a *different* kind/CRD wouldn't resolve to anything in `world`
+        # anyway. Every instance is simply its own root.
+        icon = ICONS_BY_KIND.get(kind, "crd")
+        nodes = [build_node(obj, kind, icon, True, crd=crd_name) for obj in root_objects]
+        return Graph(nodes=nodes, edges=[], resource_count=resource_count, truncated=truncated)

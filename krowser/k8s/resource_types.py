@@ -26,6 +26,13 @@ NAMESPACES_TYPE_ID = "cluster/namespaces"
 
 NETWORK_POLICIES_TYPE_ID = "network/policies"
 
+# Not a real Kubernetes Kind -- like PROBLEMS_TYPE_ID, this id is
+# special-cased (in GraphBuilder.build(), not fetch_root, since the real
+# Kind/group/version/plural to fetch are only known once a specific CRD is
+# picked). "kind" is a synthetic placeholder never actually used for a
+# FETCHERS_BY_KIND lookup; see krowser/k8s/custom_resources.py.
+CUSTOM_RESOURCES_TYPE_ID = "cluster/customresources"
+
 # Order here is the exact left-pane display order from the spec. Consecutive
 # entries sharing a `group` render under one group header on the frontend;
 # entries with `group=None` render as flat top-level rows.
@@ -33,6 +40,7 @@ RESOURCE_TYPES: list[ResourceTypeSpec] = [
     ResourceTypeSpec("cluster/nodes", "Nodes", "Cluster", "node", False, "Node"),
     ResourceTypeSpec(PROBLEMS_TYPE_ID, "Problems", "Cluster", "problem", True, "Problem"),
     ResourceTypeSpec(NAMESPACES_TYPE_ID, "Namespaces", "Cluster", "namespace", True, "Namespace"),
+    ResourceTypeSpec(CUSTOM_RESOURCES_TYPE_ID, "Custom Resources", "Cluster", "crd", True, "CustomResource"),
     ResourceTypeSpec("configmaps", "ConfigMaps", "Config", "configmap", True, "ConfigMap"),
     ResourceTypeSpec("secrets", "Secrets", "Config", "secret", True, "Secret"),
     ResourceTypeSpec("network/ingresses", "Ingresses", "Network", "ingress", True, "Ingress"),
@@ -63,6 +71,7 @@ ICONS_BY_KIND.setdefault("ClusterRoleBinding", "clusterrolebinding")
 ICONS_BY_KIND.setdefault("HorizontalPodAutoscaler", "hpa")
 ICONS_BY_KIND.setdefault("PodDisruptionBudget", "poddisruptionbudget")
 ICONS_BY_KIND.setdefault("VolumeAttachment", "volumeattachment")
+ICONS_BY_KIND.setdefault("StorageClass", "storageclass")
 ICONS_BY_KIND.setdefault("ResourceQuota", "resourcequota")
 ICONS_BY_KIND.setdefault("LimitRange", "limitrange")
 

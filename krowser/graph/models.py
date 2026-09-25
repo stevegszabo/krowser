@@ -44,6 +44,12 @@ class GraphNode(BaseModel):
     is_root: bool
     is_static: bool = False
     containers: list[str] = []
+    # Set only for a custom resource instance (an arbitrary Kind from a CRD)
+    # -- the CRD's own metadata.name (e.g. "virtualmachines.kubevirt.io"),
+    # letting the frontend ask for this node's YAML without krowser needing a
+    # static GETTERS_BY_KIND entry for every possible CRD Kind. See
+    # krowser.k8s.custom_resources and the /api/resource-yaml route.
+    crd: str | None = None
 
 
 class GraphEdge(BaseModel):

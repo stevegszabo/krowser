@@ -1,3 +1,6 @@
+// Kept in sync with krowser.k8s.resource_types.CUSTOM_RESOURCES_TYPE_ID.
+const CUSTOM_RESOURCES_TYPE_ID = 'cluster/customresources';
+
 function loadStoredDetailPaneWidth() {
   try {
     const stored = parseInt(localStorage.getItem('krowser.detailPaneWidth'), 10);
@@ -42,6 +45,14 @@ document.addEventListener('alpine:init', () => {
     namespace: 'default', // '' = "All namespaces"
     resourceTypes: [],
     selectedType: null,
+    crds: [], // installed CustomResourceDefinitions, for the Custom Resources view's picker -- see loadCrds()
+    // A CRD's own metadata.name (e.g. "virtualmachines.kubevirt.io"), or ''
+    // if none picked yet -- '' (not null) so it matches a native <select>'s
+    // own value semantics (always a string), same convention as `namespace`
+    // above ('' = "All namespaces"); a mismatched sentinel here left the
+    // disabled placeholder option unable to render as selected, so the
+    // browser fell back to showing the first real CRD instead.
+    selectedCrd: '',
     filterText: '', // graph filter box text -- lives here (not in graphView.js) so it's deep-linkable, see appRoot's syncUrl()
     graph: null,
     selectedResource: null, // { id, kind, namespace, name } | null -- the highlighted tile, set by a plain click
@@ -119,6 +130,17 @@ document.addEventListener('alpine:init', () => {
         // "no ?ns= param at all" -- has() (not the value) is what tells them apart.
         if (params.has('ns')) store.namespace = params.get('ns');
         if (params.has('filter')) store.filterText = params.get('filter');
+
+        // Lazily loaded (unlike resourceTypes) -- CRD lists can be sizable
+        // and are only ever needed once this one view is actually selected.
+        if (store.selectedType === CUSTOM_RESOURCES_TYPE_ID) {
+          await this.loadCrds();
+          const requestedCrd = params.get('crd');
+          if (requestedCrd && store.crds.some((c) => c.name === requestedCrd)) {
+            store.selectedCrd = requestedCrd;
+          }
+        }
+
         if (params.has('resKind')) {
           pendingResource = {
             kind: params.get('resKind'),
@@ -143,6 +165,7 @@ document.addEventListener('alpine:init', () => {
       this.$watch('$store.app.context', () => this.syncUrl());
       this.$watch('$store.app.namespace', () => this.syncUrl());
       this.$watch('$store.app.selectedType', () => this.syncUrl());
+      this.$watch('$store.app.selectedCrd', () => this.syncUrl());
       this.$watch('$store.app.selectedResource', () => this.syncUrl());
       this.$watch('$store.app.filterText', () => this.syncUrl());
       this.syncUrl();
@@ -173,6 +196,7 @@ document.addEventListener('alpine:init', () => {
       if (store.context) params.set('context', store.context);
       if (store.namespace !== 'default') params.set('ns', store.namespace);
       if (store.selectedType) params.set('type', store.selectedType);
+      if (store.selectedCrd) params.set('crd', store.selectedCrd);
       if (store.filterText) params.set('filter', store.filterText);
       if (store.selectedResource) {
         params.set('resKind', store.selectedResource.kind);
@@ -190,8 +214,29 @@ document.addEventListener('alpine:init', () => {
       store.namespaces = res.namespaces;
     },
 
-    onTypeSelect(id) {
-      this.$store.app.selectedType = id;
+    async loadCrds() {
+      const store = this.$store.app;
+      const res = await api.getCrds(store.context);
+      store.crds = res.crds;
+    },
+
+    async onTypeSelect(id) {
+      const store = this.$store.app;
+      store.selectedType = id;
+      store.selectedResource = null;
+      store.detailResource = null;
+      if (id === CUSTOM_RESOURCES_TYPE_ID && store.crds.length === 0) {
+        try {
+          await this.loadCrds();
+        } catch (e) {
+          store.error = e.message;
+        }
+      }
+      this.restartPolling();
+      this.refresh();
+    },
+
+    onCrdChange() {
       this.$store.app.selectedResource = null;
       this.$store.app.detailResource = null;
       this.restartPolling();
@@ -209,6 +254,14 @@ document.addEventListener('alpine:init', () => {
         store.resourceTypes = typesRes.resource_types;
         if (!store.resourceTypes.some((rt) => rt.id === store.selectedType)) {
           store.selectedType = store.resourceTypes[0]?.id ?? null;
+        }
+        // A different cluster/context can have an entirely different set of
+        // CRDs installed -- the previously selected one likely doesn't exist
+        // here, so drop it rather than requesting a stale/wrong CRD's graph.
+        if (store.selectedType === CUSTOM_RESOURCES_TYPE_ID) {
+          store.selectedCrd = '';
+          store.crds = [];
+          await this.loadCrds();
         }
       } catch (e) {
         store.error = e.message;
@@ -281,6 +334,7 @@ document.addEventListener('alpine:init', () => {
           type: store.selectedType,
           namespace: store.namespace,
           context: store.context,
+          crd: store.selectedType === CUSTOM_RESOURCES_TYPE_ID ? store.selectedCrd : null,
         });
         if (requestId !== this.requestSeq) return;
         store.graph = graph;

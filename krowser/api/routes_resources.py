@@ -4,10 +4,41 @@ from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.graph.builder import fetch_root
 from krowser.k8s.client import KubeClientManager
+from krowser.k8s.fetchers import list_crds
 from krowser.k8s.resource_types import ICONS_BY_KIND, UnknownResourceTypeError, get_all_resource_types, get_resource_type
 from krowser.k8s.status import build_node
 
 router = APIRouter(prefix="/api", tags=["resources"])
+
+
+@router.get("/crds")
+def get_crds(
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    # Powers the CRD picker on the Custom Resources view (see
+    # krowser.k8s.resource_types.CUSTOM_RESOURCES_TYPE_ID) -- listed
+    # separately from /api/resource-types since which CRDs exist is
+    # cluster-specific, unlike the static built-in resource type list.
+    try:
+        crds = list_crds(mgr, context)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {
+        "crds": sorted(
+            (
+                {
+                    "name": crd.metadata.name,
+                    "kind": crd.spec.names.kind,
+                    "group": crd.spec.group,
+                    "scope": crd.spec.scope,
+                }
+                for crd in crds
+            ),
+            key=lambda c: c["kind"],
+        )
+    }
 
 
 @router.get("/resource-types")

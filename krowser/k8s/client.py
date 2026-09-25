@@ -98,9 +98,13 @@ class KubeClientManager:
     def storage_v1(self, context: str | None) -> k8s_client.StorageV1Api:
         return k8s_client.StorageV1Api(self.api_client_for(context))
 
-    # Scoped specifically to krowser.k8s.metrics (the metrics.k8s.io Metrics
-    # API has no dedicated typed client) -- not a reintroduction of the
-    # general CRD-browsing surface that was deliberately removed.
+    def apiextensions_v1(self, context: str | None) -> k8s_client.ApiextensionsV1Api:
+        return k8s_client.ApiextensionsV1Api(self.api_client_for(context))
+
+    # CustomObjectsApi has no generated model classes (unlike every other
+    # *Api client above) -- see krowser.k8s.custom_resources.AttrDict for how
+    # its raw dict responses are bridged into the dot-access shape the rest
+    # of the app expects.
     def custom_objects_api(self, context: str | None) -> k8s_client.CustomObjectsApi:
         return k8s_client.CustomObjectsApi(self.api_client_for(context))
 

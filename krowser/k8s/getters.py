@@ -112,6 +112,21 @@ def get_volume_attachment(mgr: KubeClientManager, context: str | None, name: str
     return _get("VolumeAttachment", mgr.storage_v1(context).read_volume_attachment, name)
 
 
+def get_storage_class(mgr: KubeClientManager, context: str | None, name: str) -> Any:
+    # Cluster-scoped: no namespace variant exists.
+    return _get("StorageClass", mgr.storage_v1(context).read_storage_class, name)
+
+
+def get_crd(mgr: KubeClientManager, context: str | None, name: str) -> Any:
+    # Cluster-scoped: no namespace variant exists. name is the CRD's own
+    # metadata.name (e.g. "virtualmachines.kubevirt.io"), which is how a
+    # graph request identifies which CRD's instances to fetch -- see
+    # krowser.graph.builder's custom-resources branch of build().
+    return _get(
+        "CustomResourceDefinition", mgr.apiextensions_v1(context).read_custom_resource_definition, name
+    )
+
+
 def get_namespace(mgr: KubeClientManager, context: str | None, name: str) -> Any:
     # Cluster-scoped: no namespace variant exists.
     return _get("Namespace", mgr.core_v1(context).read_namespace, name)
@@ -204,6 +219,7 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "PersistentVolume": lambda mgr, context, namespace, name: get_persistent_volume(mgr, context, name),
     "Node": lambda mgr, context, namespace, name: get_node(mgr, context, name),
     "VolumeAttachment": lambda mgr, context, namespace, name: get_volume_attachment(mgr, context, name),
+    "StorageClass": lambda mgr, context, namespace, name: get_storage_class(mgr, context, name),
     "Namespace": lambda mgr, context, namespace, name: get_namespace(mgr, context, name),
     "ResourceQuota": get_resource_quota,
     "LimitRange": get_limit_range,

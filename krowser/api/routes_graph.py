@@ -16,12 +16,13 @@ def get_graph(
     type: str,
     namespace: str | None = None,
     context: str | None = None,
+    crd: str | None = None,
     mgr: KubeClientManager = Depends(get_kube_client_manager),
 ) -> Graph:
     try:
         if type == PROBLEMS_TYPE_ID:
             return find_problems(mgr, context, namespace)
-        return GraphBuilder(mgr).build(type, namespace, context)
+        return GraphBuilder(mgr).build(type, namespace, context, crd=crd)
     except UnknownResourceTypeError:
         raise HTTPException(status_code=404, detail=f"unknown resource type: {type}")
     except Exception as exc:

@@ -25,6 +25,7 @@ const api = {
   getContexts: () => apiGet('/api/contexts'),
   getNamespaces: (context) => apiGet('/api/namespaces', { context }),
   getResourceTypes: (context) => apiGet('/api/resource-types', { context }),
+  getCrds: (context) => apiGet('/api/crds', { context }),
   getResources: (params) => apiGet('/api/resources', params),
   getGraph: (params) => apiGet('/api/graph', params),
   getResourceYaml: (params) => apiGet('/api/resource-yaml', params),

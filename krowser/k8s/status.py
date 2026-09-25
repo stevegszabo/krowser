@@ -403,6 +403,22 @@ def _describe_volume_attachment(obj: Any) -> tuple[Health, str, str | None, list
     return health, status_label, None, badges
 
 
+def _describe_storage_class(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # No status/condition concept -- "unknown" health matches the existing
+    # ConfigMap/NetworkPolicy/ResourceQuota precedent. reclaimPolicy defaults
+    # to "Delete" server-side when unset, same as the API's own default.
+    provisioner = obj.provisioner
+    reclaim_policy = obj.reclaim_policy or "Delete"
+    status_label = provisioner
+    badges = [
+        Badge(text=provisioner, variant="misc"),
+        Badge(text=f"Reclaim: {reclaim_policy}", variant="misc"),
+    ]
+    if obj.volume_binding_mode:
+        badges.append(Badge(text=obj.volume_binding_mode, variant="misc"))
+    return "unknown", status_label, None, badges
+
+
 def _describe_pod_disruption_budget(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     # disruptionsAllowed hitting 0 is a real, meaningful health signal (not
     # just a number like ResourceQuota/LimitRange) -- it means the very next
@@ -448,6 +464,26 @@ def _describe_limit_range(obj: Any) -> tuple[Health, str, str | None, list[Badge
     return "unknown", status_label, None, [Badge(text=status_label, variant="misc")]
 
 
+def _describe_custom_resource(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # Arbitrary CRD schemas have no well-known status shape krowser can
+    # interpret -- "unknown" health, like ConfigMap/Secret, rather than
+    # guessing at conventions that don't universally hold. Many CRDs do
+    # follow the common status.conditions[] convention (ArgoCD Application,
+    # cert-manager Certificate, KubeVirt VirtualMachine, ...), so the first
+    # condition's type/status is surfaced as reference info -- but never used
+    # to decide health, since a given condition's "False" can mean healthy or
+    # unhealthy entirely depending on that CRD's own semantics.
+    conditions = (obj.status.conditions if obj.status else None) or []
+    if conditions:
+        first = conditions[0]
+        status_label = f"{first.type}: {first.status}"
+        badges = [Badge(text=status_label, variant="misc")]
+    else:
+        status_label = "Custom resource"
+        badges = []
+    return "unknown", status_label, None, badges
+
+
 _DESCRIBERS = {
     "Deployment": lambda obj: _describe_replica_style(obj, "ready_replicas"),
     "StatefulSet": lambda obj: _describe_replica_style(obj, "ready_replicas"),
@@ -474,6 +510,7 @@ _DESCRIBERS = {
     "LimitRange": _describe_limit_range,
     "PodDisruptionBudget": _describe_pod_disruption_budget,
     "VolumeAttachment": _describe_volume_attachment,
+    "StorageClass": _describe_storage_class,
 }
 
 
@@ -485,6 +522,7 @@ def build_node(
     *,
     node_metrics: dict[str, Usage] | None = None,
     pod_metrics: dict[tuple[str, str], Usage] | None = None,
+    crd: str | None = None,
 ) -> GraphNode:
     # Node and Pod take extra (metrics) arguments the other describers don't,
     # so they're special-cased here rather than threading an unused param
@@ -494,7 +532,7 @@ def build_node(
     elif kind == "Pod":
         health, status_label, ready, extra_badges = _describe_pod(obj, pod_metrics)
     else:
-        health, status_label, ready, extra_badges = _DESCRIBERS[kind](obj)
+        health, status_label, ready, extra_badges = _DESCRIBERS.get(kind, _describe_custom_resource)(obj)
     age_badge, age, age_seconds = _age_badge(obj)
     # Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry a
     # real ownerReference back to their Node -- flag them so the frontend can
@@ -525,4 +563,5 @@ def build_node(
         is_root=is_root,
         is_static=is_static,
         containers=containers,
+        crd=crd,
     )

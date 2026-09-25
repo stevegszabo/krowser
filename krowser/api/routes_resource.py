@@ -7,7 +7,8 @@ from fastapi.responses import Response
 from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.k8s.client import KubeClientManager
-from krowser.k8s.getters import GETTERS_BY_KIND, get_pod_logs, get_resource_events
+from krowser.k8s.custom_resources import get_custom_resource, resolve_served_version
+from krowser.k8s.getters import GETTERS_BY_KIND, get_crd, get_pod_logs, get_resource_events
 from krowser.k8s.pod_describe import describe_pod, event_rows
 from krowser.kubescape_scan import scan_workload
 from krowser.vuln_scan import scan_image
@@ -16,15 +17,34 @@ router = APIRouter(prefix="/api", tags=["resource"])
 
 
 def _fetch_resource_yaml(
-    mgr: KubeClientManager, context: str | None, kind: str, namespace: str | None, name: str
+    mgr: KubeClientManager,
+    context: str | None,
+    kind: str,
+    namespace: str | None,
+    name: str,
+    crd: str | None = None,
 ):
-    getter = GETTERS_BY_KIND.get(kind)
-    if getter is None:
-        raise HTTPException(status_code=404, detail=f"unknown kind: {kind}")
+    if crd:
+        # A custom resource instance -- GETTERS_BY_KIND has no entry for an
+        # arbitrary CRD Kind, so `crd` (the CRD's own metadata.name, e.g.
+        # "virtualmachines.kubevirt.io", attached to the node by
+        # GraphBuilder._build_custom_resource_graph) is resolved back to a
+        # group/version/plural here instead. get_custom_resource already
+        # returns a plain dict (not a typed object), so sanitize_for_serialization
+        # is close to a no-op, but still normalizes it the same way as every
+        # other kind for a consistent response shape.
+        crd_def = get_crd(mgr, context, crd)
+        version = resolve_served_version(crd_def)
+        sanitized = get_custom_resource(
+            mgr, context, namespace, name, crd_def.spec.group, version, crd_def.spec.names.plural
+        )
+    else:
+        getter = GETTERS_BY_KIND.get(kind)
+        if getter is None:
+            raise HTTPException(status_code=404, detail=f"unknown kind: {kind}")
+        obj = getter(mgr, context, namespace, name)
+        sanitized = mgr.api_client_for(context).sanitize_for_serialization(obj)
 
-    obj = getter(mgr, context, namespace, name)
-    api_client = mgr.api_client_for(context)
-    sanitized = api_client.sanitize_for_serialization(obj)
     yaml_text = yaml.safe_dump(sanitized, sort_keys=False, default_flow_style=False)
     return yaml_text, sanitized
 
@@ -35,10 +55,11 @@ def get_resource_yaml(
     name: str,
     namespace: str | None = None,
     context: str | None = None,
+    crd: str | None = None,
     mgr: KubeClientManager = Depends(get_kube_client_manager),
 ):
     try:
-        yaml_text, sanitized = _fetch_resource_yaml(mgr, context, kind, namespace, name)
+        yaml_text, sanitized = _fetch_resource_yaml(mgr, context, kind, namespace, name, crd)
     except HTTPException:
         raise
     except Exception as exc:
@@ -59,10 +80,11 @@ def get_resource_yaml_download(
     name: str,
     namespace: str | None = None,
     context: str | None = None,
+    crd: str | None = None,
     mgr: KubeClientManager = Depends(get_kube_client_manager),
 ):
     try:
-        yaml_text, _ = _fetch_resource_yaml(mgr, context, kind, namespace, name)
+        yaml_text, _ = _fetch_resource_yaml(mgr, context, kind, namespace, name, crd)
     except HTTPException:
         raise
     except Exception as exc:
