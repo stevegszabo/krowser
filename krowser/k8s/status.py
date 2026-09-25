@@ -343,11 +343,19 @@ def _format_node_usage(obj: Any, usage: Usage) -> str:
     )
 
 
+# A node reports these independently of its own Ready condition -- the
+# kubelet starts evicting pods (DiskPressure/MemoryPressure) or refusing new
+# ones (PIDPressure) long before it would ever flip Ready to False, so a
+# node can sit at "healthy" Ready while already in real, actionable trouble.
+_PRESSURE_CONDITIONS = ("DiskPressure", "MemoryPressure", "PIDPressure")
+
+
 def _describe_node(
     obj: Any, node_metrics: dict[str, Usage] | None = None
 ) -> tuple[Health, str, str | None, list[Badge]]:
     conditions = obj.status.conditions or []
-    ready_cond = next((c for c in conditions if c.type == "Ready"), None)
+    conditions_by_type = {c.type: c for c in conditions}
+    ready_cond = conditions_by_type.get("Ready")
     unschedulable = bool(obj.spec.unschedulable)
 
     if ready_cond is None or ready_cond.status == "Unknown":
@@ -361,9 +369,36 @@ def _describe_node(
         status_label = "NotReady"
 
     badges = [Badge(text=status_label, variant="status")]
+
+    active_pressures = []
+    for cond_type in _PRESSURE_CONDITIONS:
+        cond = conditions_by_type.get(cond_type)
+        if cond and cond.status == "True":
+            active_pressures.append(cond_type)
+    if active_pressures:
+        # Overrides "healthy"/"unknown" -- a confirmed pressure condition is
+        # always more informative than either. Doesn't touch status_label
+        # (still "Ready"/"Cordoned"/etc., which remains literally true) --
+        # the pressure itself gets its own badge below instead.
+        health = "degraded"
+        badges.append(Badge(text=", ".join(active_pressures), variant="warning"))
+
     node_info = obj.status.node_info
     if node_info and node_info.kubelet_version:
         badges.append(Badge(text=node_info.kubelet_version, variant="misc"))
+
+    # Capacity only (not live usage) -- metrics-server's Metrics API (used
+    # for the CPU/memory badge below) doesn't expose ephemeral-storage at
+    # all; that would need the kubelet's separate Summary API, which krowser
+    # doesn't integrate with. Still meaningfully more than nothing: at least
+    # shows how much disk a node has to work with, alongside the pressure
+    # condition above for whether it's currently a problem.
+    allocatable = obj.status.allocatable or {}
+    ephemeral_storage = allocatable.get("ephemeral-storage")
+    if ephemeral_storage:
+        gib = round(parse_quantity(ephemeral_storage) / (1024**3))
+        badges.append(Badge(text=f"Disk: {gib}Gi", variant="misc"))
+
     usage = (node_metrics or {}).get(obj.metadata.name)
     if usage:
         badges.append(Badge(text=_format_node_usage(obj, usage), variant="metrics"))

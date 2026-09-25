@@ -57,6 +57,20 @@ def test_find_problems_includes_only_unhealthy_resources_across_kinds(
     assert graph.truncated is False
 
 
+def test_find_problems_surfaces_node_under_disk_pressure(monkeypatch, make_node):
+    healthy_node = make_node("n1", "worker-1", ready="True")
+    pressured_node = make_node(
+        "n2", "worker-2", ready="True",
+        extra_conditions=[k8s.V1NodeCondition(type="DiskPressure", status="True")],
+    )
+
+    _patch_fetchers(monkeypatch, {"Node": [healthy_node, pressured_node]})
+
+    graph = find_problems(mgr=None, context=None, namespace="ns")
+
+    assert {n.id for n in graph.nodes} == {"n2"}
+
+
 def test_find_problems_excludes_kinds_with_no_status_concept(monkeypatch, make_config_map, make_secret):
     cm = make_config_map("cm-1", "settings")
     secret = make_secret("secret-1", "tls")

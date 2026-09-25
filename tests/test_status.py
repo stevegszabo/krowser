@@ -135,6 +135,59 @@ def test_node_condition_health_mapping(make_node):
     assert (ready.status_label, cordoned.status_label) == ("Ready", "Cordoned")
 
 
+def test_node_under_disk_pressure_is_degraded_despite_ready_true(make_node):
+    node_obj = make_node(
+        "n1", "worker-1", ready="True",
+        extra_conditions=[k8s.V1NodeCondition(type="DiskPressure", status="True")],
+    )
+
+    node = build_node(node_obj, "Node", "node", True)
+
+    assert node.health == "degraded"
+    # status_label itself stays "Ready" -- it's still literally true -- the
+    # pressure gets its own separate badge instead.
+    assert node.status_label == "Ready"
+    assert any(b.variant == "warning" and b.text == "DiskPressure" for b in node.badges)
+
+
+def test_node_reports_multiple_active_pressures_in_one_badge(make_node):
+    node_obj = make_node(
+        "n1", "worker-1", ready="True",
+        extra_conditions=[
+            k8s.V1NodeCondition(type="DiskPressure", status="True"),
+            k8s.V1NodeCondition(type="MemoryPressure", status="True"),
+            k8s.V1NodeCondition(type="PIDPressure", status="False"),
+        ],
+    )
+
+    node = build_node(node_obj, "Node", "node", True)
+
+    assert node.health == "degraded"
+    assert any(b.variant == "warning" and b.text == "DiskPressure, MemoryPressure" for b in node.badges)
+
+
+def test_node_without_active_pressure_has_no_warning_badge(make_node):
+    node_obj = make_node(
+        "n1", "worker-1", ready="True",
+        extra_conditions=[k8s.V1NodeCondition(type="DiskPressure", status="False")],
+    )
+
+    node = build_node(node_obj, "Node", "node", True)
+
+    assert node.health == "healthy"
+    assert not any(b.variant == "warning" for b in node.badges)
+
+
+def test_node_shows_ephemeral_storage_capacity_badge(make_node):
+    node_obj = make_node(
+        "n1", "worker-1", ready="True", allocatable={"ephemeral-storage": "104845292Ki"}
+    )
+
+    node = build_node(node_obj, "Node", "node", True)
+
+    assert any(b.variant == "misc" and b.text == "Disk: 100Gi" for b in node.badges)
+
+
 def test_node_shows_usage_badge_with_percentage_of_allocatable(make_node):
     node_obj = make_node("n1", "worker-1", ready="True", allocatable={"cpu": "8", "memory": "8192Mi"})
     node_metrics = {"worker-1": Usage(cpu_cores=Decimal("1.5"), memory_bytes=Decimal(2048 * 1024**2))}
