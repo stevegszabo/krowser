@@ -669,3 +669,65 @@ def test_namespaces_view_shows_all_namespaces_when_unfiltered(
     graph = GraphBuilder(mgr=None).build("cluster/namespaces", namespace="", context=None)
 
     assert {n.id for n in graph.nodes} == {"ns-1", "ns-2"}
+
+
+def test_policies_view_shows_restricted_and_peer_pods(monkeypatch, make_pod, make_network_policy):
+    # On the "Policies" view itself, the policy is the root -- so unlike a
+    # Pod/Deployment view (where a NetworkPolicy is only ever a satellite),
+    # both the pod it restricts (server) and the peer pod it allows traffic
+    # from (client, matched via an ingress rule's own podSelector, not the
+    # policy's own podSelector) should show up without needing to already be
+    # reachable for some unrelated reason.
+    server_pod = make_pod("pod-1", "server", labels={"role": "server"})
+    client_pod = make_pod("pod-2", "client", labels={"role": "client"})
+    policy = make_network_policy(
+        "np-1",
+        "allow-client",
+        pod_selector=k8s.V1LabelSelector(match_labels={"role": "server"}),
+        ingress=[
+            k8s.V1NetworkPolicyIngressRule(
+                _from=[k8s.V1NetworkPolicyPeer(pod_selector=k8s.V1LabelSelector(match_labels={"role": "client"}))]
+            )
+        ],
+    )
+
+    _patch_fetchers(monkeypatch, {"Pod": [server_pod, client_pod], "NetworkPolicy": [policy]})
+
+    graph = GraphBuilder(mgr=None).build("network/policies", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"np-1", "pod-1", "pod-2"}
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("np-1", "pod-1", "restricts") in relations
+    assert ("np-1", "pod-2", "allows-from") in relations
+
+
+def test_policies_view_excludes_pod_matched_by_no_policy(monkeypatch, make_pod, make_network_policy):
+    matched_pod = make_pod("pod-1", "web", labels={"app": "web"})
+    unrelated_pod = make_pod("pod-2", "unrelated", labels={"app": "other"})
+    policy = make_network_policy(
+        "np-1", "allow-web", pod_selector=k8s.V1LabelSelector(match_labels={"app": "web"})
+    )
+
+    _patch_fetchers(monkeypatch, {"Pod": [matched_pod, unrelated_pod], "NetworkPolicy": [policy]})
+
+    graph = GraphBuilder(mgr=None).build("network/policies", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"np-1", "pod-1"}
+
+
+def test_policies_view_broad_policy_shows_every_pod_it_restricts(
+    monkeypatch, make_pod, make_network_policy
+):
+    # A namespace-wide default-deny (empty podSelector) is exactly the kind
+    # of broad policy that Pod/Deployment views must NOT let bridge unrelated
+    # pods together -- but on the Policies view, showing every pod it
+    # actually restricts is the whole point (visualizing its blast radius).
+    pod_a = make_pod("pod-1", "a")
+    pod_b = make_pod("pod-2", "b")
+    default_deny = make_network_policy("np-1", "default-deny-all", pod_selector=k8s.V1LabelSelector())
+
+    _patch_fetchers(monkeypatch, {"Pod": [pod_a, pod_b], "NetworkPolicy": [default_deny]})
+
+    graph = GraphBuilder(mgr=None).build("network/policies", namespace="ns", context=None)
+
+    assert {n.id for n in graph.nodes} == {"np-1", "pod-1", "pod-2"}

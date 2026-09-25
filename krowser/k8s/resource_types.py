@@ -24,6 +24,8 @@ PROBLEMS_TYPE_ID = "cluster/problems"
 # cluster-scoped types where it's a no-op, hence namespaced=True.
 NAMESPACES_TYPE_ID = "cluster/namespaces"
 
+NETWORK_POLICIES_TYPE_ID = "network/policies"
+
 # Order here is the exact left-pane display order from the spec. Consecutive
 # entries sharing a `group` render under one group header on the frontend;
 # entries with `group=None` render as flat top-level rows.
@@ -35,6 +37,7 @@ RESOURCE_TYPES: list[ResourceTypeSpec] = [
     ResourceTypeSpec("secrets", "Secrets", "Config", "secret", True, "Secret"),
     ResourceTypeSpec("network/ingresses", "Ingresses", "Network", "ingress", True, "Ingress"),
     ResourceTypeSpec("network/services", "Services", "Network", "service", True, "Service"),
+    ResourceTypeSpec(NETWORK_POLICIES_TYPE_ID, "Policies", "Network", "networkpolicy", True, "NetworkPolicy"),
     ResourceTypeSpec("storage/persistentvolumes", "PersistentVolumes", "Storage", "pv", False, "PersistentVolume"),
     ResourceTypeSpec("storage/persistentvolumeclaims", "PersistentVolumeClaims", "Storage", "pvc", True, "PersistentVolumeClaim"),
     ResourceTypeSpec("workloads/daemonsets", "DaemonSets", "Workloads", "daemonset", True, "DaemonSet"),
@@ -58,7 +61,6 @@ ICONS_BY_KIND.setdefault("RoleBinding", "rolebinding")
 ICONS_BY_KIND.setdefault("ClusterRole", "clusterrole")
 ICONS_BY_KIND.setdefault("ClusterRoleBinding", "clusterrolebinding")
 ICONS_BY_KIND.setdefault("HorizontalPodAutoscaler", "hpa")
-ICONS_BY_KIND.setdefault("NetworkPolicy", "networkpolicy")
 ICONS_BY_KIND.setdefault("ResourceQuota", "resourcequota")
 ICONS_BY_KIND.setdefault("LimitRange", "limitrange")
 

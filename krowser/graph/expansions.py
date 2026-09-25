@@ -32,6 +32,7 @@ GRAPH_EXPANSIONS: dict[str, GraphExpansion] = {
     "configmaps": GraphExpansion(()),
     "network/ingresses": GraphExpansion(("Service", "Pod", "EndpointSlice")),
     "network/services": GraphExpansion(("EndpointSlice", "Pod")),
+    "network/policies": GraphExpansion(("Pod", "Namespace")),
     "secrets": GraphExpansion(()),
     "storage/persistentvolumes": GraphExpansion(("PersistentVolumeClaim",)),
     "storage/persistentvolumeclaims": GraphExpansion(("PersistentVolume", "Pod")),

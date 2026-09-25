@@ -67,16 +67,32 @@ _BACKWARD_ONLY_RELATIONS = {"restricts"}
 _NON_REACHABILITY_RELATIONS = {"allows-from", "allows-to"}
 
 
-def _reachable_uids(root_uids: set[str], edges: list[GraphEdge]) -> set[str]:
+def _reachable_uids(root_uids: set[str], edges: list[GraphEdge], root_kind: str) -> set[str]:
     # Most relations are traversed in both directions, since either endpoint
     # legitimately wants to discover the other (e.g. a Pod should show which
     # Service exposes it) -- see _FORWARD_ONLY_RELATIONS/_BACKWARD_ONLY_RELATIONS/
     # _NON_REACHABILITY_RELATIONS above for the exceptions.
+    #
+    # Those exceptions exist to stop a NetworkPolicy from bridging unrelated
+    # pods into a Pod/Deployment/etc. view just because it happens to be a
+    # shared satellite of several of them. On the "Policies" view itself
+    # (root_kind == "NetworkPolicy"), that concern doesn't apply -- every
+    # policy in the namespace is already its own root, so there's no
+    # unrelated policy for a shared pod to bridge in from. There, forward
+    # traversal from the policy to every pod it restricts/allows is exactly
+    # the view's purpose, so the restrictions are lifted for this build only.
+    if root_kind == "NetworkPolicy":
+        backward_only = _BACKWARD_ONLY_RELATIONS - {"restricts"}
+        non_reachability: set[str] = set()
+    else:
+        backward_only = _BACKWARD_ONLY_RELATIONS
+        non_reachability = _NON_REACHABILITY_RELATIONS
+
     adjacency: dict[str, set[str]] = {}
     for edge in edges:
-        if edge.relation in _NON_REACHABILITY_RELATIONS:
+        if edge.relation in non_reachability:
             continue
-        if edge.relation not in _BACKWARD_ONLY_RELATIONS:
+        if edge.relation not in backward_only:
             adjacency.setdefault(edge.source, set()).add(edge.target)
         if edge.relation not in _FORWARD_ONLY_RELATIONS:
             adjacency.setdefault(edge.target, set()).add(edge.source)
@@ -208,7 +224,7 @@ class GraphBuilder:
         # e.g. selecting "Deployments" shows the pods that belong to a deployment,
         # not every unrelated pod in the namespace that also happened to be fetched
         # as part of the expansion.
-        reachable = _reachable_uids(root_uids, all_edges)
+        reachable = _reachable_uids(root_uids, all_edges, rt.kind)
         nodes = [n for n in all_nodes if n.id in reachable]
         edges = [e for e in all_edges if e.source in reachable and e.target in reachable]
         edges = _merge_parallel_edges(edges)

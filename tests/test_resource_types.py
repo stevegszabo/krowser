@@ -14,6 +14,7 @@ def test_resource_type_order_matches_spec():
         "Secrets",
         "Ingresses",
         "Services",
+        "Policies",
         "PersistentVolumes",
         "PersistentVolumeClaims",
         "DaemonSets",
@@ -34,6 +35,7 @@ def test_groups_match_spec():
     assert groups["Secrets"] == "Config"
     assert groups["Ingresses"] == "Network"
     assert groups["Services"] == "Network"
+    assert groups["Policies"] == "Network"
     assert groups["PersistentVolumes"] == "Storage"
     assert groups["PersistentVolumeClaims"] == "Storage"
     assert groups["DaemonSets"] == "Workloads"
