@@ -15,7 +15,7 @@ ALL_KINDS = [
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
     "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
     "ClusterRoleBinding", "HorizontalPodAutoscaler", "NetworkPolicy", "Namespace",
-    "ResourceQuota", "LimitRange", "PodDisruptionBudget",
+    "ResourceQuota", "LimitRange", "PodDisruptionBudget", "VolumeAttachment",
 ]
 
 
@@ -125,6 +125,55 @@ def test_deployment_graph_includes_used_configmap_secret_pvc_excludes_service_an
     assert ("pod-1", "pvc-1", "claims") in relations
     assert ("svc-1", "eps-1", "exposes") not in relations
     assert ("eps-1", "pod-1", "targets") not in relations
+
+
+def test_deployment_graph_includes_volumeattachment_via_pvc_pv_chain(
+    monkeypatch, make_deployment, make_replica_set, make_pod, make_pvc, make_pv, make_volume_attachment
+):
+    # Pod -claims-> PVC -binds-> PV -attaches-> VolumeAttachment: the whole
+    # chain should be reachable transitively even though VolumeAttachment
+    # only connects to the PV, not the Pod/PVC directly.
+    deploy = make_deployment("dep-1", "web")
+    rs = make_replica_set(
+        "rs-1", "web-abc",
+        owner_refs=[k8s.V1OwnerReference(kind="Deployment", name="web", uid="dep-1", api_version="apps/v1")],
+    )
+    pod = make_pod(
+        "pod-1", "web-abc-xyz",
+        owner_refs=[k8s.V1OwnerReference(kind="ReplicaSet", name="web-abc", uid="rs-1", api_version="apps/v1")],
+        volumes=[
+            k8s.V1Volume(
+                name="data", persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(claim_name="web-data")
+            ),
+        ],
+    )
+    pvc = make_pvc("pvc-1", "web-data", phase="Bound", volume_name="pv-1")
+    pv = make_pv("pv-1", "pv-1")
+    va = make_volume_attachment("va-1", "csi-attach-1", pv_name="pv-1")
+    unattached_pv = make_pv("pv-2", "pv-2")
+    unrelated_va = make_volume_attachment("va-2", "csi-attach-2", pv_name="pv-2")
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Deployment": [deploy],
+            "ReplicaSet": [rs],
+            "Pod": [pod],
+            "PersistentVolumeClaim": [pvc],
+            "PersistentVolume": [pv, unattached_pv],
+            "VolumeAttachment": [va, unrelated_va],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/deployments", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"dep-1", "rs-1", "pod-1", "pvc-1", "pv-1", "va-1"}
+    assert "pv-2" not in node_ids
+    assert "va-2" not in node_ids
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("va-1", "pv-1", "attaches") in relations
 
 
 def test_shared_configmap_does_not_bridge_unrelated_pod_into_view(

@@ -109,6 +109,12 @@ def list_nodes(mgr: KubeClientManager, context: str | None) -> list[Any]:
     return _call("Node", api.list_node)
 
 
+def list_volume_attachments(mgr: KubeClientManager, context: str | None) -> list[Any]:
+    # Cluster-scoped: no namespace variant exists.
+    api = mgr.storage_v1(context)
+    return _call("VolumeAttachment", api.list_volume_attachment)
+
+
 def list_namespace_objects(mgr: KubeClientManager, context: str | None) -> list[Any]:
     # Cluster-scoped: no namespace variant exists. Named "_objects" (not just
     # list_namespaces) to distinguish it from KubeClientManager.list_namespaces
@@ -263,6 +269,7 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "PersistentVolumeClaim": list_persistent_volume_claims,
     "PersistentVolume": lambda mgr, context, namespace: list_persistent_volumes(mgr, context),
     "Node": lambda mgr, context, namespace: list_nodes(mgr, context),
+    "VolumeAttachment": lambda mgr, context, namespace: list_volume_attachments(mgr, context),
     "Namespace": lambda mgr, context, namespace: list_namespace_objects(mgr, context),
     "ResourceQuota": list_resource_quotas,
     "LimitRange": list_limit_ranges,

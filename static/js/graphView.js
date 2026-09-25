@@ -14,6 +14,7 @@ const RELATION_LABEL = {
   'allows-from': 'allows from',
   'allows-to': 'allows to',
   protects: 'protects',
+  attaches: 'attaches',
 };
 
 // Kubescape's "scan workload" refuses to scan a Pod that has an owner (which

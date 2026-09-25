@@ -95,6 +95,9 @@ class KubeClientManager:
     def policy_v1(self, context: str | None) -> k8s_client.PolicyV1Api:
         return k8s_client.PolicyV1Api(self.api_client_for(context))
 
+    def storage_v1(self, context: str | None) -> k8s_client.StorageV1Api:
+        return k8s_client.StorageV1Api(self.api_client_for(context))
+
     # Scoped specifically to krowser.k8s.metrics (the metrics.k8s.io Metrics
     # API has no dedicated typed client) -- not a reintroduction of the
     # general CRD-browsing surface that was deliberately removed.

@@ -340,3 +340,33 @@ def test_pod_disruption_budget_with_no_disruptions_allowed_is_degraded(make_pod_
 
     assert node.health == "degraded"
     assert node.status_label == "No disruptions allowed"
+
+
+def test_volume_attachment_attached_is_healthy(make_volume_attachment):
+    va = make_volume_attachment("va-1", "csi-attach-1", pv_name="pv-1", node_name="worker-1", attached=True)
+
+    node = build_node(va, "VolumeAttachment", "volumeattachment", True)
+
+    assert node.health == "healthy"
+    assert node.status_label == "Attached"
+
+
+def test_volume_attachment_not_yet_attached_is_progressing(make_volume_attachment):
+    va = make_volume_attachment("va-1", "csi-attach-1", pv_name="pv-1", attached=False)
+
+    node = build_node(va, "VolumeAttachment", "volumeattachment", True)
+
+    assert node.health == "progressing"
+    assert node.status_label == "Attaching"
+
+
+def test_volume_attachment_with_attach_error_is_degraded(make_volume_attachment):
+    va = make_volume_attachment(
+        "va-1", "csi-attach-1", pv_name="pv-1", attached=False,
+        attach_error=k8s.V1VolumeError(message="mount failed"),
+    )
+
+    node = build_node(va, "VolumeAttachment", "volumeattachment", True)
+
+    assert node.health == "degraded"
+    assert node.status_label == "Attach error"

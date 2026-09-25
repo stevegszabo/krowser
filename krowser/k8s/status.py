@@ -381,6 +381,28 @@ def _describe_namespace(obj: Any) -> tuple[Health, str, str | None, list[Badge]]
     return health, phase, None, [Badge(text=phase, variant="status")]
 
 
+def _describe_volume_attachment(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    status = obj.status
+    attached = status.attached if status else False
+    error = (status.attach_error or status.detach_error) if status else None
+
+    if error:
+        health: Health = "degraded"
+        status_label = "Attach error" if status.attach_error else "Detach error"
+    elif attached:
+        health = "healthy"
+        status_label = "Attached"
+    else:
+        health = "progressing"
+        status_label = "Attaching"
+
+    badges = [
+        Badge(text=status_label, variant="status"),
+        Badge(text=obj.spec.node_name, variant="misc"),
+    ]
+    return health, status_label, None, badges
+
+
 def _describe_pod_disruption_budget(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     # disruptionsAllowed hitting 0 is a real, meaningful health signal (not
     # just a number like ResourceQuota/LimitRange) -- it means the very next
@@ -451,6 +473,7 @@ _DESCRIBERS = {
     "ResourceQuota": _describe_resource_quota,
     "LimitRange": _describe_limit_range,
     "PodDisruptionBudget": _describe_pod_disruption_budget,
+    "VolumeAttachment": _describe_volume_attachment,
 }
 
 

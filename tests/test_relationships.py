@@ -18,6 +18,7 @@ from krowser.graph.relationships import (
     link_pod_to_serviceaccount,
     link_poddisruptionbudget_to_pods,
     link_pvc_to_pv,
+    link_volumeattachment_to_pv,
     link_rolebinding_to_role_or_clusterrole,
     link_rolebinding_to_serviceaccount_subjects,
     link_service_to_endpointslices,
@@ -108,6 +109,17 @@ def test_pvc_binds_to_pv_only_when_bound(make_pvc, make_pv):
     edges = link_pvc_to_pv(world)
 
     assert [(e.source, e.target) for e in edges] == [("pvc-1", "pv-1")]
+
+
+def test_volumeattachment_attaches_to_named_pv(make_volume_attachment, make_pv):
+    pv1 = make_pv("pv-1", "pv-1")
+    pv2 = make_pv("pv-2", "pv-2")
+    va = make_volume_attachment("va-1", "csi-attach-1", pv_name="pv-1")
+
+    world = {"VolumeAttachment": [va], "PersistentVolume": [pv1, pv2]}
+    edges = link_volumeattachment_to_pv(world)
+
+    assert [(e.source, e.target, e.relation) for e in edges] == [("va-1", "pv-1", "attaches")]
 
 
 def test_pod_runs_on_matching_node(make_pod, make_node):

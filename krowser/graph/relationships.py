@@ -198,6 +198,29 @@ def link_pvc_to_pv(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_volumeattachment_to_pv(world: World) -> list[GraphEdge]:
+    """A VolumeAttachment references its PersistentVolume by name via
+    spec.source.persistentVolumeName (there is exactly one PV per
+    attachment, so -- unlike NetworkPolicy/PodDisruptionBudget's
+    selector-based many-to-one matching -- there's no shared-hub bridging
+    risk here; an ordinary bidirectional relation is fine)."""
+    pvs_by_name = {pv.metadata.name: pv for pv in world.get("PersistentVolume", [])}
+    edges = []
+    for va in world.get("VolumeAttachment", []):
+        pv_name = va.spec.source.persistent_volume_name
+        pv = pvs_by_name.get(pv_name) if pv_name else None
+        if pv:
+            edges.append(
+                GraphEdge(
+                    id=f"attaches:{va.metadata.uid}:{pv.metadata.uid}",
+                    source=va.metadata.uid,
+                    target=pv.metadata.uid,
+                    relation="attaches",
+                )
+            )
+    return edges
+
+
 def link_pod_to_node(world: World) -> list[GraphEdge]:
     """Static/mirror pods (e.g. kube-apiserver on a control-plane node) carry
     a real ownerReference back to their Node, which link_owner_references
@@ -626,6 +649,7 @@ LINKERS = [
     link_ingress_to_services,
     link_pod_to_pvc,
     link_pvc_to_pv,
+    link_volumeattachment_to_pv,
     link_pod_to_node,
     link_pod_to_configmap,
     link_pod_to_secret,

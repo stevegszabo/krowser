@@ -458,3 +458,23 @@ def make_pod_disruption_budget():
         )
 
     return _make
+
+
+@pytest.fixture
+def make_volume_attachment():
+    def _make(uid, name, pv_name, node_name="node-1", attached=True, attach_error=None, detach_error=None):
+        return k8s.V1VolumeAttachment(
+            metadata=_meta(uid, name, namespace=None),
+            spec=k8s.V1VolumeAttachmentSpec(
+                attacher="csi.example.com",
+                node_name=node_name,
+                source=k8s.V1VolumeAttachmentSource(persistent_volume_name=pv_name),
+            ),
+            status=k8s.V1VolumeAttachmentStatus(
+                attached=attached,
+                attach_error=attach_error,
+                detach_error=detach_error,
+            ),
+        )
+
+    return _make

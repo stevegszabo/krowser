@@ -197,6 +197,27 @@ def test_resource_yaml_supports_pod_disruption_budget(client, monkeypatch, make_
     assert "name: web-pdb" in yaml_text
 
 
+def test_resource_yaml_supports_volume_attachment(client, monkeypatch, make_volume_attachment):
+    va = make_volume_attachment("va-1", "csi-attach-1", pv_name="pv-1")
+    va.kind = "VolumeAttachment"
+    va.api_version = "storage.k8s.io/v1"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND,
+        "VolumeAttachment",
+        lambda mgr, context, namespace, name: va,
+    )
+
+    res = client.get(
+        "/api/resource-yaml",
+        params={"kind": "VolumeAttachment", "name": "csi-attach-1"},
+    )
+
+    assert res.status_code == 200
+    yaml_text = res.json()["yaml"]
+    assert "kind: VolumeAttachment" in yaml_text
+    assert "name: csi-attach-1" in yaml_text
+
+
 def test_resource_yaml_unknown_kind_is_404(client):
     res = client.get("/api/resource-yaml", params={"kind": "Bogus", "name": "x"})
     assert res.status_code == 404

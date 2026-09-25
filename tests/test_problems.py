@@ -12,7 +12,7 @@ ALL_KINDS = [
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
     "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
     "ClusterRoleBinding", "HorizontalPodAutoscaler", "Namespace", "NetworkPolicy",
-    "PodDisruptionBudget",
+    "PodDisruptionBudget", "VolumeAttachment",
 ]
 
 

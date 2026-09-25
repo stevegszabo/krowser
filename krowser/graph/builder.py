@@ -133,6 +133,7 @@ _RELATION_DISPLAY = {
     "allows-from": "allows from",
     "allows-to": "allows to",
     "protects": "protects",
+    "attaches": "attaches",
 }
 
 # When a NetworkPolicy's own podSelector and one of its ingress/egress peer

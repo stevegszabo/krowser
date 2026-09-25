@@ -15,6 +15,7 @@ WORKLOAD_RELATED_KINDS = (
     "Secret",
     "PersistentVolumeClaim",
     "PersistentVolume",
+    "VolumeAttachment",
     "PodDisruptionBudget",
 )
 
@@ -40,8 +41,8 @@ GRAPH_EXPANSIONS: dict[str, GraphExpansion] = {
     "network/services": GraphExpansion(("EndpointSlice", "Pod")),
     "network/policies": GraphExpansion(("Pod", "Namespace")),
     "secrets": GraphExpansion(()),
-    "storage/persistentvolumes": GraphExpansion(("PersistentVolumeClaim",)),
-    "storage/persistentvolumeclaims": GraphExpansion(("PersistentVolume", "Pod")),
+    "storage/persistentvolumes": GraphExpansion(("PersistentVolumeClaim", "VolumeAttachment")),
+    "storage/persistentvolumeclaims": GraphExpansion(("PersistentVolume", "Pod", "VolumeAttachment")),
     "workloads/daemonsets": GraphExpansion(
         ("Pod",) + WORKLOAD_RELATED_KINDS + RBAC_RELATED_KINDS + NETWORK_POLICY_RELATED_KINDS
     ),

@@ -20,6 +20,7 @@ Relation = Literal[
     "allows-from",
     "allows-to",
     "protects",
+    "attaches",
 ]
 
 
