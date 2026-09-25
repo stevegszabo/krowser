@@ -919,7 +919,7 @@ html, body {
 .krw-yaml-tree {
   padding: 14px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--ink);
 }
@@ -979,9 +979,17 @@ html, body {
 .krw-detail-table tbody tr:nth-child(even) {
   background: var(--zebra-bg);
 }
+
+/* The YAML viewer's rules table (Role/ClusterRole, in place of the tree --
+   see index.html's rulesTable branch) matches the tree's own 14px, distinct
+   from the (unrelated) Events table, which also uses .krw-detail-table. */
+.krw-yaml-table table {
+  font-size: 14px;
+}
 .krw-rules-verb {
   display: inline-block;
   margin: 1px 3px 1px 0;
+  font-size: 12px;
 }
 
 .krw-logs {
