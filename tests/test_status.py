@@ -317,3 +317,26 @@ def test_limit_range_reports_unknown_health_with_limit_count(make_limit_range):
 
     assert node.health == "unknown"
     assert node.status_label == "0 limits"
+
+
+def test_pod_disruption_budget_with_disruptions_allowed_is_healthy(make_pod_disruption_budget):
+    pdb = make_pod_disruption_budget(
+        "pdb-1", "web-pdb", disruptions_allowed=2, current_healthy=3, desired_healthy=2
+    )
+
+    node = build_node(pdb, "PodDisruptionBudget", "poddisruptionbudget", True)
+
+    assert node.health == "healthy"
+    assert node.status_label == "2 disruptions allowed"
+    assert node.ready == "3/2"
+
+
+def test_pod_disruption_budget_with_no_disruptions_allowed_is_degraded(make_pod_disruption_budget):
+    pdb = make_pod_disruption_budget(
+        "pdb-1", "web-pdb", disruptions_allowed=0, current_healthy=1, desired_healthy=2
+    )
+
+    node = build_node(pdb, "PodDisruptionBudget", "poddisruptionbudget", True)
+
+    assert node.health == "degraded"
+    assert node.status_label == "No disruptions allowed"

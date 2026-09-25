@@ -176,6 +176,27 @@ def test_resource_yaml_supports_namespace(client, monkeypatch, make_namespace):
     assert "name: team-a" in yaml_text
 
 
+def test_resource_yaml_supports_pod_disruption_budget(client, monkeypatch, make_pod_disruption_budget):
+    pdb = make_pod_disruption_budget("pdb-1", "web-pdb", namespace="ns")
+    pdb.kind = "PodDisruptionBudget"
+    pdb.api_version = "policy/v1"
+    monkeypatch.setitem(
+        routes_resource_module.GETTERS_BY_KIND,
+        "PodDisruptionBudget",
+        lambda mgr, context, namespace, name: pdb,
+    )
+
+    res = client.get(
+        "/api/resource-yaml",
+        params={"kind": "PodDisruptionBudget", "name": "web-pdb", "namespace": "ns"},
+    )
+
+    assert res.status_code == 200
+    yaml_text = res.json()["yaml"]
+    assert "kind: PodDisruptionBudget" in yaml_text
+    assert "name: web-pdb" in yaml_text
+
+
 def test_resource_yaml_unknown_kind_is_404(client):
     res = client.get("/api/resource-yaml", params={"kind": "Bogus", "name": "x"})
     assert res.status_code == 404

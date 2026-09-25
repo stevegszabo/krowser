@@ -10,7 +10,13 @@ class GraphExpansion:
 # shows what it uses, not just its ownership chain. Service/EndpointSlice are
 # deliberately excluded here (unlike the Ingresses expansion below) -- only
 # Ingress routing shows the Service/EndpointSlice hop.
-WORKLOAD_RELATED_KINDS = ("ConfigMap", "Secret", "PersistentVolumeClaim", "PersistentVolume")
+WORKLOAD_RELATED_KINDS = (
+    "ConfigMap",
+    "Secret",
+    "PersistentVolumeClaim",
+    "PersistentVolume",
+    "PodDisruptionBudget",
+)
 
 # Extra kinds every Workloads-group view also pulls in to show the
 # ServiceAccount a workload's pods run as, and any Role/ClusterRole granted

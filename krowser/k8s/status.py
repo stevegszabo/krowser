@@ -381,6 +381,32 @@ def _describe_namespace(obj: Any) -> tuple[Health, str, str | None, list[Badge]]
     return health, phase, None, [Badge(text=phase, variant="status")]
 
 
+def _describe_pod_disruption_budget(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+    # disruptionsAllowed hitting 0 is a real, meaningful health signal (not
+    # just a number like ResourceQuota/LimitRange) -- it means the very next
+    # voluntary eviction (a node drain, a rollout) will be blocked until
+    # currentHealthy recovers above the budget, a common source of stuck
+    # drains that's otherwise invisible without reading this object directly.
+    status = obj.status
+    disruptions_allowed = status.disruptions_allowed if status else 0
+    current_healthy = status.current_healthy if status else 0
+    desired_healthy = status.desired_healthy if status else 0
+
+    if disruptions_allowed > 0:
+        health: Health = "healthy"
+        status_label = f"{disruptions_allowed} disruption{'s' if disruptions_allowed != 1 else ''} allowed"
+    else:
+        health = "degraded"
+        status_label = "No disruptions allowed"
+
+    ready = f"{current_healthy}/{desired_healthy}"
+    badges = [
+        Badge(text=status_label, variant="status"),
+        Badge(text=ready, variant="ready"),
+    ]
+    return health, status_label, ready, badges
+
+
 def _describe_resource_quota(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
     # No status/condition concept of its own (used/hard are just numbers, not
     # a pass/fail signal) -- "unknown" health matches the ConfigMap/Role
@@ -424,6 +450,7 @@ _DESCRIBERS = {
     "Namespace": _describe_namespace,
     "ResourceQuota": _describe_resource_quota,
     "LimitRange": _describe_limit_range,
+    "PodDisruptionBudget": _describe_pod_disruption_budget,
 }
 
 

@@ -202,6 +202,15 @@ def list_horizontal_pod_autoscalers(
     )
 
 
+def list_pod_disruption_budgets(
+    mgr: KubeClientManager, context: str | None, namespace: str | None
+) -> list[Any]:
+    api = mgr.policy_v1(context)
+    if namespace:
+        return _call("PodDisruptionBudget", api.list_namespaced_pod_disruption_budget, namespace)
+    return _call("PodDisruptionBudget", api.list_pod_disruption_budget_for_all_namespaces)
+
+
 class _RawJsonResponse:
     """Minimal stand-in for a urllib3 HTTPResponse: ApiClient.deserialize only
     ever reads `.data`."""
@@ -267,4 +276,5 @@ FETCHERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None]
     "NetworkPolicy": list_network_policies,
     "EndpointSlice": list_endpoint_slices,
     "HorizontalPodAutoscaler": list_horizontal_pod_autoscalers,
+    "PodDisruptionBudget": list_pod_disruption_budgets,
 }

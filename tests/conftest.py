@@ -429,3 +429,32 @@ def make_limit_range():
         )
 
     return _make
+
+
+@pytest.fixture
+def make_pod_disruption_budget():
+    def _make(
+        uid,
+        name,
+        namespace="ns",
+        selector=None,
+        disruptions_allowed=1,
+        current_healthy=1,
+        desired_healthy=1,
+        expected_pods=1,
+    ):
+        return k8s.V1PodDisruptionBudget(
+            metadata=_meta(uid, name, namespace),
+            spec=k8s.V1PodDisruptionBudgetSpec(
+                selector=selector if selector is not None else k8s.V1LabelSelector(),
+                min_available=1,
+            ),
+            status=k8s.V1PodDisruptionBudgetStatus(
+                disruptions_allowed=disruptions_allowed,
+                current_healthy=current_healthy,
+                desired_healthy=desired_healthy,
+                expected_pods=expected_pods,
+            ),
+        )
+
+    return _make

@@ -16,6 +16,7 @@ from krowser.graph.relationships import (
     link_pod_to_pvc,
     link_pod_to_secret,
     link_pod_to_serviceaccount,
+    link_poddisruptionbudget_to_pods,
     link_pvc_to_pv,
     link_rolebinding_to_role_or_clusterrole,
     link_rolebinding_to_serviceaccount_subjects,
@@ -891,3 +892,28 @@ def test_link_namespace_to_resourcequota_and_limitrange(
         ("ns-1", "lr-1", "owns"),
         ("ns-2", "rq-2", "owns"),
     }
+
+
+def test_poddisruptionbudget_matches_pod_by_selector(make_pod_disruption_budget, make_pod):
+    pdb = make_pod_disruption_budget(
+        "pdb-1", "web-pdb", selector=k8s.V1LabelSelector(match_labels={"app": "web"})
+    )
+    matching_pod = make_pod("pod-1", "web-1", labels={"app": "web"})
+    other_pod = make_pod("pod-2", "cache-1", labels={"app": "cache"})
+
+    edges = link_poddisruptionbudget_to_pods(
+        {"PodDisruptionBudget": [pdb], "Pod": [matching_pod, other_pod]}
+    )
+
+    assert {(e.source, e.target, e.relation) for e in edges} == {("pdb-1", "pod-1", "protects")}
+
+
+def test_poddisruptionbudget_ignores_pod_in_other_namespace(make_pod_disruption_budget, make_pod):
+    pdb = make_pod_disruption_budget(
+        "pdb-1", "web-pdb", namespace="ns-a", selector=k8s.V1LabelSelector()
+    )
+    other_ns_pod = make_pod("pod-1", "web-1", namespace="ns-b")
+
+    edges = link_poddisruptionbudget_to_pods({"PodDisruptionBudget": [pdb], "Pod": [other_ns_pod]})
+
+    assert edges == []

@@ -49,7 +49,12 @@ _FORWARD_ONLY_RELATIONS = {"uses", "grants"}
 # a namespace-wide default-deny policy selects both. A reachable pod can
 # discover the policy that restricts it, but that policy never flows forward
 # to every *other* pod it also restricts.
-_BACKWARD_ONLY_RELATIONS = {"restricts"}
+#
+# "protects" (PodDisruptionBudget -> Pod) is the same shape of problem for
+# the same reason (a namespace-wide PDB is a common shared hub) and, unlike
+# NetworkPolicy, PDB is never itself a browsable root kind -- so it stays
+# unconditionally backward-only with no exception needed in _reachable_uids.
+_BACKWARD_ONLY_RELATIONS = {"restricts", "protects"}
 
 # "allows-from"/"allows-to" (NetworkPolicy -> peer Pod, an ingress/egress
 # rule's own peer once resolved to a real fetched Pod): excluded from
@@ -127,6 +132,7 @@ _RELATION_DISPLAY = {
     "restricts": "restricts",
     "allows-from": "allows from",
     "allows-to": "allows to",
+    "protects": "protects",
 }
 
 # When a NetworkPolicy's own podSelector and one of its ingress/egress peer

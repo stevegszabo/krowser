@@ -61,6 +61,7 @@ ICONS_BY_KIND.setdefault("RoleBinding", "rolebinding")
 ICONS_BY_KIND.setdefault("ClusterRole", "clusterrole")
 ICONS_BY_KIND.setdefault("ClusterRoleBinding", "clusterrolebinding")
 ICONS_BY_KIND.setdefault("HorizontalPodAutoscaler", "hpa")
+ICONS_BY_KIND.setdefault("PodDisruptionBudget", "poddisruptionbudget")
 ICONS_BY_KIND.setdefault("ResourceQuota", "resourcequota")
 ICONS_BY_KIND.setdefault("LimitRange", "limitrange")
 

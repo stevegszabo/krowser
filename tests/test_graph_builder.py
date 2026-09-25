@@ -15,7 +15,7 @@ ALL_KINDS = [
     "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Ingress",
     "EndpointSlice", "Node", "ServiceAccount", "Role", "RoleBinding", "ClusterRole",
     "ClusterRoleBinding", "HorizontalPodAutoscaler", "NetworkPolicy", "Namespace",
-    "ResourceQuota", "LimitRange",
+    "ResourceQuota", "LimitRange", "PodDisruptionBudget",
 ]
 
 
@@ -635,6 +635,73 @@ def test_networkpolicy_self_matching_peer_merges_into_single_edge(
     edge = edges_between[0]
     assert edge.relation == "restricts"
     assert edge.label == "restricts, allows from, allows to"
+
+
+def test_pod_graph_includes_matching_poddisruptionbudget_excludes_non_matching(
+    monkeypatch, make_pod, make_pod_disruption_budget
+):
+    pod = make_pod("pod-1", "web", labels={"app": "web"})
+    other_pod = make_pod("pod-2", "cache", labels={"app": "cache"})
+    matching_pdb = make_pod_disruption_budget(
+        "pdb-1", "web-pdb", selector=k8s.V1LabelSelector(match_labels={"app": "web"})
+    )
+    non_matching_pdb = make_pod_disruption_budget(
+        "pdb-2", "db-pdb", selector=k8s.V1LabelSelector(match_labels={"app": "db"})
+    )
+
+    _patch_fetchers(
+        monkeypatch,
+        {"Pod": [pod, other_pod], "PodDisruptionBudget": [matching_pdb, non_matching_pdb]},
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/pods", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"pod-1", "pod-2", "pdb-1"}
+    assert "pdb-2" not in node_ids
+
+    relations = {(e.source, e.target, e.relation) for e in graph.edges}
+    assert ("pdb-1", "pod-1", "protects") in relations
+
+
+def test_shared_poddisruptionbudget_does_not_bridge_unrelated_pod_into_view(
+    monkeypatch, make_deployment, make_replica_set, make_pod, make_pod_disruption_budget
+):
+    # Same bridging concern as the equivalent NetworkPolicy test: a
+    # namespace-wide PDB (empty selector) protects every pod in the
+    # namespace, including an unrelated StatefulSet's pod that has no other
+    # edge into this Deployments view -- the shared PDB must not become a
+    # backdoor connection.
+    deploy = make_deployment("dep-1", "web")
+    rs = make_replica_set(
+        "rs-1", "web-abc",
+        owner_refs=[k8s.V1OwnerReference(kind="Deployment", name="web", uid="dep-1", api_version="apps/v1")],
+    )
+    deploy_pod = make_pod(
+        "pod-1", "web-abc-xyz",
+        owner_refs=[k8s.V1OwnerReference(kind="ReplicaSet", name="web-abc", uid="rs-1", api_version="apps/v1")],
+    )
+    unrelated_pod = make_pod(
+        "pod-2", "other-0",
+        owner_refs=[k8s.V1OwnerReference(kind="StatefulSet", name="other", uid="sts-1", api_version="apps/v1")],
+    )
+    pdb = make_pod_disruption_budget("pdb-1", "namespace-wide-pdb", selector=k8s.V1LabelSelector())
+
+    _patch_fetchers(
+        monkeypatch,
+        {
+            "Deployment": [deploy],
+            "ReplicaSet": [rs],
+            "Pod": [deploy_pod, unrelated_pod],
+            "PodDisruptionBudget": [pdb],
+        },
+    )
+
+    graph = GraphBuilder(mgr=None).build("workloads/deployments", namespace="ns", context=None)
+
+    node_ids = {n.id for n in graph.nodes}
+    assert node_ids == {"dep-1", "rs-1", "pod-1", "pdb-1"}
+    assert "pod-2" not in node_ids
 
 
 def test_namespaces_view_filters_to_selected_namespace_by_name(

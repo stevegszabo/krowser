@@ -171,6 +171,17 @@ def get_horizontal_pod_autoscaler(
     )
 
 
+def get_pod_disruption_budget(
+    mgr: KubeClientManager, context: str | None, namespace: str, name: str
+) -> Any:
+    return _get(
+        "PodDisruptionBudget",
+        mgr.policy_v1(context).read_namespaced_pod_disruption_budget,
+        name,
+        namespace,
+    )
+
+
 # Kind name -> single-object getter, mirroring FETCHERS_BY_KIND in fetchers.py.
 # Takes (mgr, context, namespace, name); PersistentVolume is cluster-scoped so
 # it's wrapped to accept (and ignore) a namespace arg for a uniform call signature.
@@ -200,4 +211,5 @@ GETTERS_BY_KIND: dict[str, Callable[[KubeClientManager, str | None, str | None, 
     "NetworkPolicy": get_network_policy,
     "EndpointSlice": get_endpoint_slice,
     "HorizontalPodAutoscaler": get_horizontal_pod_autoscaler,
+    "PodDisruptionBudget": get_pod_disruption_budget,
 }

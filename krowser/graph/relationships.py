@@ -544,6 +544,33 @@ def link_networkpolicy_peers(world: World) -> list[GraphEdge]:
     return edges
 
 
+def link_poddisruptionbudget_to_pods(world: World) -> list[GraphEdge]:
+    """A PodDisruptionBudget applies to whichever pods in its own namespace
+    match its spec.selector -- the same shape and matching rules as
+    NetworkPolicy's podSelector (see _selector_matches), and the same
+    reachability concern applies: a broadly-scoped PDB (e.g. an empty
+    selector matching every pod in the namespace) is a many-to-one hub that
+    must not bridge unrelated pods together on a Pod/Deployment/etc. view,
+    so this uses its own "protects" relation (backward-only, like
+    "restricts") rather than an ordinary bidirectional one.
+    """
+    edges = []
+    for pdb in world.get("PodDisruptionBudget", []):
+        for pod in world.get("Pod", []):
+            if pod.metadata.namespace != pdb.metadata.namespace:
+                continue
+            if _selector_matches(pdb.spec.selector, pod.metadata.labels or {}):
+                edges.append(
+                    GraphEdge(
+                        id=f"protects:{pdb.metadata.uid}:{pod.metadata.uid}",
+                        source=pdb.metadata.uid,
+                        target=pod.metadata.uid,
+                        relation="protects",
+                    )
+                )
+    return edges
+
+
 def link_hpa_to_target(world: World) -> list[GraphEdge]:
     """An HPA references its scale target via spec.scaleTargetRef
     {kind, name}, not an ownerReference. Looked up generically over whatever
@@ -613,6 +640,7 @@ LINKERS = [
     link_networkpolicy_peers,
     link_namespace_to_resourcequota_and_limitrange,
     link_hpa_to_target,
+    link_poddisruptionbudget_to_pods,
 ]
 
 
