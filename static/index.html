@@ -178,6 +178,26 @@
           </div>
         </template>
 
+        <template x-if="legendKinds.length > 1">
+          <div class="krw-legend">
+            <div class="krw-legend-header" @click="legendOpen = !legendOpen">
+              <span>Legend</span>
+              <svg class="krw-legend-chevron" :class="{ collapsed: !legendOpen }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <template x-if="legendOpen">
+              <div class="krw-legend-items">
+                <template x-for="item in legendKinds" :key="item.kind">
+                  <label class="krw-legend-item">
+                    <input type="checkbox" :checked="!hiddenKinds[item.kind]" @change="toggleKind(item.kind)" />
+                    <span class="krw-legend-icon" x-html="window.ICONS[item.icon] || window.ICONS.default"></span>
+                    <span x-text="item.kind"></span>
+                  </label>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
         <template x-if="contextMenu.visible">
           <div
             class="krw-context-menu"

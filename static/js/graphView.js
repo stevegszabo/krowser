@@ -42,7 +42,8 @@ function graphView() {
     cy: null,
     panMode: true,
     zoomPct: 100,
-    legendOpen: false,
+    legendOpen: true,
+    hiddenKinds: {},
     lastSelectionKey: null,
     // The very first graph the app renders after loading defaults to a
     // fixed 100% zoom instead of the usual fit-to-screen; cleared after
@@ -95,9 +96,10 @@ function graphView() {
       this.cy.nodeHtmlLabel([
         {
           // ':visible' (not just 'node') so a node hidden via
-          // style('display', 'none') -- see applyFilter() -- drops its HTML
-          // overlay too; the plugin listens for 'style' events and re-checks
-          // this query, removing/re-adding the overlay div as it changes.
+          // style('display', 'none') -- see applyVisibility() -- drops its
+          // HTML overlay too; the plugin listens for 'style' events and
+          // re-checks this query, removing/re-adding the overlay div as it
+          // changes.
           query: 'node:visible',
           halign: 'center',
           valign: 'center',
@@ -225,7 +227,7 @@ function graphView() {
       this.$watch('$store.app.graph', (graph) => this.renderGraph(graph));
       this.renderGraph(this.$store.app.graph);
 
-      this.$watch('$store.app.filterText', () => this.applyFilter());
+      this.$watch('$store.app.filterText', () => this.applyVisibility());
     },
 
     reapplySelectionHighlight() {
@@ -242,6 +244,11 @@ function graphView() {
       const selectionKey = `${store.selectedType}|${store.namespace}|${store.context}`;
       const selectionChanged = selectionKey !== this.lastSelectionKey;
       this.lastSelectionKey = selectionKey;
+      // A fresh selection means a different set of kinds may be present (or
+      // the same kind names may mean something different) -- start every
+      // new view with everything visible rather than carrying over the
+      // previous view's toggles.
+      if (selectionChanged) this.hiddenKinds = {};
 
       if (!graph || graph.nodes.length === 0) {
         this.cy.elements().remove();
@@ -302,11 +309,14 @@ function graphView() {
       this.applyMeasuredHeights(added.nodes());
       this.reapplySelectionHighlight();
       this.runLayout(selectionChanged ? undefined : { pan, zoom });
-      // Freshly added elements default to visible -- only worth re-filtering
-      // (and re-fitting to the filtered subset) when a filter is actually
-      // active; otherwise skip entirely so the pan/zoom preservation above
-      // isn't immediately overridden by a fit-to-everything call.
-      if (this.$store.app.filterText.trim()) this.applyFilter();
+      // Freshly added elements default to visible -- only worth re-applying
+      // the name filter/kind toggles (and re-fitting to that subset) when
+      // one is actually active; otherwise skip entirely so the pan/zoom
+      // preservation above isn't immediately overridden by a
+      // fit-to-everything call.
+      if (this.$store.app.filterText.trim() || Object.keys(this.hiddenKinds).length > 0) {
+        this.applyVisibility();
+      }
     },
 
     // The cytoscape node style's height (DEFAULT_NODE_HEIGHT) is a fixed
@@ -431,30 +441,67 @@ function graphView() {
       return { x: this.$refs.canvas.clientWidth / 2, y: this.$refs.canvas.clientHeight / 2 };
     },
 
-    // Hides nodes/edges that don't match $store.app.filterText (lives in the
-    // shared store, not here, so it's deep-linkable -- see app.js's
-    // syncUrl()). Matches keep their immediate neighbors visible too (rather
-    // than their whole connected component), since many views funnel
-    // everything through one shared node (e.g. a namespace) -- full BFS
-    // would keep that entire component and make the filter a no-op. The
-    // kept subset is then re-laid-out on its own (not just re-fit) so it
-    // tightens up into the freed space instead of sitting wherever it
-    // happened to land in the full graph.
-    applyFilter() {
+    // One distinct entry per Kind actually present in the current graph
+    // (not every possible kind), each with an icon to match the legend
+    // checkbox to what's on screen -- feeds the legend panel in the
+    // bottom-left corner. Recomputed reactively off the store's graph, so
+    // it stays in sync without any extra bookkeeping.
+    get legendKinds() {
+      if (!this.$store.app.graph) return [];
+      const iconByKind = new Map();
+      this.$store.app.graph.nodes.forEach((n) => {
+        if (!iconByKind.has(n.kind)) iconByKind.set(n.kind, n.icon);
+      });
+      return Array.from(iconByKind, ([kind, icon]) => ({ kind, icon })).sort((a, b) =>
+        a.kind.localeCompare(b.kind)
+      );
+    },
+
+    toggleKind(kind) {
+      if (this.hiddenKinds[kind]) {
+        delete this.hiddenKinds[kind];
+      } else {
+        this.hiddenKinds[kind] = true;
+      }
+      this.applyVisibility();
+    },
+
+    // Single source of truth for which nodes/edges are actually shown,
+    // combining two independent, composable criteria: $store.app.filterText
+    // (a name substring, lives in the shared store so it's deep-linkable --
+    // see app.js's syncUrl()) and hiddenKinds (the legend's per-Kind
+    // checkboxes, local to this view). A name match keeps its immediate
+    // neighbors visible too (rather than its whole connected component),
+    // since many views funnel everything through one shared node (e.g. a
+    // namespace) -- full BFS would keep that entire component and make the
+    // filter a no-op. A kind toggle always wins over that neighbor-keeping,
+    // though -- hiding "Secret" means no Secret shows even if it's a
+    // filter match's own neighbor. The visible subset is then re-laid-out
+    // on its own (not just re-fit) so it tightens up into the freed space
+    // instead of sitting wherever it happened to land in the full graph.
+    applyVisibility() {
       if (!this.cy) return;
       const query = this.$store.app.filterText.trim().toLowerCase();
-      if (!query) {
+      let base;
+      if (query) {
+        const matches = this.cy.nodes().filter((n) => (n.data('name') || '').toLowerCase().includes(query));
+        this.hasNoFilterMatches = matches.empty();
+        base = matches.closedNeighborhood().nodes();
+      } else {
         this.hasNoFilterMatches = false;
-        this.cy.elements().style('display', 'element');
-        this.runLayout();
-        return;
+        base = this.cy.nodes();
       }
-      const matches = this.cy.nodes().filter((n) => (n.data('name') || '').toLowerCase().includes(query));
-      const keep = matches.closedNeighborhood();
-      this.hasNoFilterMatches = matches.empty();
+
+      const visibleNodes = base.filter((n) => !this.hiddenKinds[n.data('kind')]);
+      const visibleIds = new Set(visibleNodes.map((n) => n.id()));
+      const visibleEdges = this.cy
+        .edges()
+        .filter((e) => visibleIds.has(e.data('source')) && visibleIds.has(e.data('target')));
+
       this.cy.elements().style('display', 'none');
-      keep.style('display', 'element');
-      if (!matches.empty()) this.runLayout(undefined, keep);
+      visibleNodes.style('display', 'element');
+      visibleEdges.style('display', 'element');
+      if (visibleNodes.nonempty()) this.runLayout(undefined, visibleNodes.union(visibleEdges));
     },
 
     // Cytoscape's own png()/jpg() export only rasterizes what's drawn on its

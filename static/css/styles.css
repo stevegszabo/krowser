@@ -360,6 +360,63 @@ html, body {
   margin: 0 2px;
 }
 
+.krw-legend {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  background: var(--card-bg);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px var(--shadow-color);
+  z-index: 5;
+  min-width: 160px;
+  max-width: 220px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.krw-legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.krw-legend-header:hover { color: var(--teal-dark); }
+
+.krw-legend-chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.krw-legend-chevron.collapsed { transform: rotate(-90deg); }
+
+.krw-legend-items {
+  padding: 0 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.krw-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.krw-legend-item input { cursor: pointer; }
+.krw-legend-icon { width: 15px; height: 15px; flex-shrink: 0; display: flex; }
+.krw-legend-icon svg { width: 100%; height: 100%; }
+
 .krw-graph-filter-input {
   width: 120px;
   font-size: 12.5px;
