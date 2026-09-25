@@ -357,12 +357,20 @@
             <div class="krw-vulnscan-toolbar">
               <button class="krw-exec-run-btn" @click="runScan()" :disabled="loading">Scan</button>
               <span class="krw-exec-status" x-show="scanResults" x-text="'image: ' + (scanResults ? scanResults.image : '')"></span>
+              <label class="krw-scan-command-toggle" x-show="scanResults && scanResults.command">
+                <input type="checkbox" x-model="showScanCommand" />
+                Show command
+              </label>
             </div>
           </template>
           <template x-if="viewMode === 'kubescan'">
             <div class="krw-vulnscan-toolbar">
               <button class="krw-exec-run-btn" @click="runKubescan()" :disabled="loading">Scan</button>
               <span class="krw-exec-status" x-show="kubescanResults" x-text="'compliance score: ' + (kubescanResults ? kubescanResults.score : '') + '%'"></span>
+              <label class="krw-scan-command-toggle" x-show="kubescanResults && kubescanResults.command">
+                <input type="checkbox" x-model="showScanCommand" />
+                Show command
+              </label>
             </div>
           </template>
           <div class="krw-detail-body" :class="{ 'krw-detail-body-exec': viewMode === 'exec' }">
@@ -590,6 +598,12 @@
               </div>
             </template>
           </div>
+          <template x-if="showScanCommand && ((viewMode === 'vulnscan' && scanResults && scanResults.command) || (viewMode === 'kubescan' && kubescanResults && kubescanResults.command))">
+            <div class="krw-scan-command">
+              <span class="krw-scan-command-label">$</span>
+              <code x-text="viewMode === 'vulnscan' ? scanResults.command : kubescanResults.command"></code>
+            </div>
+          </template>
         </aside>
       </template>
     </div>

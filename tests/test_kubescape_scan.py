@@ -170,6 +170,20 @@ def test_scan_workload_raises_scan_failed_on_timeout(monkeypatch):
         scan_workload("Deployment", "ns", "web", None)
 
 
+def test_scan_workload_includes_the_command_executed(monkeypatch):
+    monkeypatch.setattr(kubescape_scan_module.shutil, "which", lambda path: "/usr/local/bin/kubescape")
+    monkeypatch.setattr(kubescape_scan_module.subprocess, "run", _fake_run(KUBESCAPE_JSON))
+
+    result = scan_workload("Deployment", "ns", "web", None)
+
+    # --output's value is a nondeterministic temp file path, so this checks
+    # the static parts of the command rather than an exact string match.
+    assert result["command"].startswith(
+        "/usr/local/bin/kubescape scan workload Deployment/web --namespace ns --format json --output"
+    )
+    assert result["command"].endswith("--keep-local --scan-images=false")
+
+
 def test_scan_workload_passes_kube_context_when_given(monkeypatch):
     monkeypatch.setattr(kubescape_scan_module.shutil, "which", lambda path: "/usr/local/bin/kubescape")
     captured = {}

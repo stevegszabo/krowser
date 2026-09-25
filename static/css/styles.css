@@ -748,6 +748,19 @@ html, body {
   flex-shrink: 0;
 }
 
+.krw-scan-command-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin-left: auto;
+}
+.krw-scan-command-toggle input { cursor: pointer; }
+
 .krw-detail-body-exec {
   padding: 8px;
   background: #12181f;
@@ -764,6 +777,30 @@ html, body {
   padding: 8px 14px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+}
+
+/* Pinned to the bottom of the detail pane (a sibling of .krw-detail-body,
+   not inside its scrollable area) so the actual Trivy/Kubescape command
+   stays visible regardless of how far the findings list is scrolled. */
+.krw-scan-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.krw-scan-command-label {
+  color: var(--teal-dark);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.krw-scan-command code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--ink-soft);
 }
 
 .krw-yaml-toolbar {

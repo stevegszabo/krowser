@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -33,7 +34,7 @@ def _extract_error(stderr: str) -> str:
     return lines[-1] if lines else "kubescape scan failed"
 
 
-def _run_kubescape(kind: str, namespace: str, name: str, context: str | None) -> dict:
+def _run_kubescape(kind: str, namespace: str, name: str, context: str | None) -> tuple[dict, str]:
     kubescape_path = shutil.which(settings.kubescape_path)
     if kubescape_path is None:
         raise ScannerUnavailableError(f"scanner binary {settings.kubescape_path!r} not found on PATH")
@@ -57,6 +58,8 @@ def _run_kubescape(kind: str, namespace: str, name: str, context: str | None) ->
         ]
         if context:
             argv += ["--kube-context", context]
+
+        command = shlex.join(argv)
 
         try:
             proc = subprocess.run(
@@ -84,7 +87,7 @@ def _run_kubescape(kind: str, namespace: str, name: str, context: str | None) ->
             raise ScanFailedError(f"scan of {kind}/{name} failed: {_extract_error(proc.stderr)}")
 
         try:
-            return json.loads(raw_text)
+            return json.loads(raw_text), command
         except ValueError as exc:
             raise ScanFailedError(f"scan of {kind}/{name} returned output that couldn't be parsed") from exc
     finally:
@@ -142,9 +145,9 @@ def scan_workload(kind: str, namespace: str, name: str, context: str | None) -> 
     if cached is not None:
         return cached
 
-    raw = _run_kubescape(kind, namespace, name, context)
+    raw, command = _run_kubescape(kind, namespace, name, context)
     findings = _parse_findings(raw)
     score = round((raw.get("summaryDetails") or {}).get("complianceScore", 0), 1)
-    result = {"score": score, "summary": _summarize(findings), "findings": findings}
+    result = {"score": score, "summary": _summarize(findings), "findings": findings, "command": command}
     _cache[key] = (time.monotonic(), result)
     return result

@@ -60,6 +60,11 @@ function resourcePanel() {
     scanResults: null,
     expandedFindings: [],
     kubescanResults: null,
+    // Off by default -- the actual command (esp. Kubescape's, with its temp
+    // --output path) is diagnostic detail most viewers don't need to see on
+    // every scan. Deliberately not reset per-load, so a user who turns it on
+    // to debug something stays opted in across resource switches this session.
+    showScanCommand: false,
     viewMode: 'yaml',
     loading: false,
     error: null,

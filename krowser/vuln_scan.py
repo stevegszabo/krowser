@@ -1,4 +1,5 @@
 import json
+import shlex
 import shutil
 import subprocess
 import time
@@ -25,16 +26,18 @@ def _cached(image: str) -> dict | None:
     return result
 
 
-def _run_trivy(image: str) -> dict:
+def _run_trivy(image: str) -> tuple[dict, str]:
     trivy_path = shutil.which(settings.vulnscan_trivy_path)
     if trivy_path is None:
         raise ScannerUnavailableError(
             f"scanner binary {settings.vulnscan_trivy_path!r} not found on PATH"
         )
 
+    argv = [trivy_path, "image", "--format", "json", "--quiet", image]
+    command = shlex.join(argv)
     try:
         proc = subprocess.run(
-            [trivy_path, "image", "--format", "json", "--quiet", image],
+            argv,
             capture_output=True,
             text=True,
             timeout=settings.vulnscan_timeout_seconds,
@@ -46,7 +49,7 @@ def _run_trivy(image: str) -> dict:
         raise ScanFailedError(f"scan of {image!r} failed: {proc.stderr.strip() or 'unknown error'}")
 
     try:
-        return json.loads(proc.stdout)
+        return json.loads(proc.stdout), command
     except ValueError as exc:
         raise ScanFailedError(f"scan of {image!r} returned output that couldn't be parsed") from exc
 
@@ -111,8 +114,8 @@ def scan_image(image: str) -> dict:
     if cached is not None:
         return cached
 
-    raw = _run_trivy(image)
+    raw, command = _run_trivy(image)
     findings = _parse_findings(raw)
-    result = {"image": image, "summary": _summarize(findings), "findings": findings}
+    result = {"image": image, "summary": _summarize(findings), "findings": findings, "command": command}
     _cache[image] = (time.monotonic(), result)
     return result

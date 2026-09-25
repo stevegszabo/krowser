@@ -93,6 +93,17 @@ def test_scan_image_parses_and_sorts_findings_by_severity(monkeypatch):
     assert second["primary_url"] is None
 
 
+def test_scan_image_includes_the_command_executed(monkeypatch):
+    monkeypatch.setattr(vuln_scan_module.shutil, "which", lambda path: "/usr/local/bin/trivy")
+    monkeypatch.setattr(
+        vuln_scan_module.subprocess, "run", lambda *a, **k: _fake_completed(stdout=json.dumps({"Results": []}))
+    )
+
+    result = scan_image("nginx:1.21")
+
+    assert result["command"] == "/usr/local/bin/trivy image --format json --quiet nginx:1.21"
+
+
 def test_scan_image_handles_clean_image_with_no_vulnerabilities(monkeypatch):
     monkeypatch.setattr(vuln_scan_module.shutil, "which", lambda path: "/usr/local/bin/trivy")
     monkeypatch.setattr(
