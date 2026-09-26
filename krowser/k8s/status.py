@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from kubernetes.utils.quantity import parse_quantity
 
 from krowser.graph.models import Badge, GraphNode, Health
-from krowser.k8s.metrics import Usage, format_node_usage, format_usage
+from krowser.k8s.metrics import Usage, VolumeUsage, format_node_usage, format_usage, format_volume_usage
 
 
 def humanize_age(creation_timestamp: datetime | None) -> tuple[str, int]:
@@ -33,8 +34,24 @@ def _age_badge(obj: Any) -> tuple[Badge, str, int]:
     return Badge(text=age, variant="age"), age, age_seconds
 
 
+def _pod_ephemeral_storage_limit_bytes(obj: Any) -> Decimal | None:
+    # Summed across containers, matching how the kubelet itself evaluates a
+    # pod's total ephemeral-storage limit for eviction purposes. None (not
+    # 0) when no container sets one, so the caller can tell "no limit
+    # configured" apart from "limit is zero" -- the former shows plain
+    # usage, the latter would nonsensically divide by zero.
+    total = None
+    for container in obj.spec.containers or []:
+        limit = (container.resources.limits or {}).get("ephemeral-storage") if container.resources else None
+        if limit:
+            total = (total or Decimal(0)) + parse_quantity(limit)
+    return total
+
+
 def _describe_pod(
-    obj: Any, pod_metrics: dict[tuple[str, str], Usage] | None = None
+    obj: Any,
+    pod_metrics: dict[tuple[str, str], Usage] | None = None,
+    ephemeral_storage_usage: dict[tuple[str, str], Decimal] | None = None,
 ) -> tuple[Health, str, str | None, list[Badge]]:
     phase = obj.status.phase or "Unknown"
     container_statuses = obj.status.container_statuses or []
@@ -69,6 +86,24 @@ def _describe_pod(
     usage = (pod_metrics or {}).get((obj.metadata.namespace, obj.metadata.name))
     if usage:
         badges.append(Badge(text=format_usage(usage), variant="metrics"))
+
+    eph_used = (ephemeral_storage_usage or {}).get((obj.metadata.namespace, obj.metadata.name))
+    if eph_used is not None:
+        # The kubelet sums exactly this (writable container layer + logs +
+        # emptyDir) against exactly this limit to decide whether to evict the
+        # pod under DiskPressure -- when a limit is actually set, this is a
+        # real, precise "about to be evicted" signal, not a heuristic.
+        mebibytes = round(eph_used / (1024**2))
+        limit = _pod_ephemeral_storage_limit_bytes(obj)
+        if limit:
+            pct = int(eph_used / limit * 100)
+            badges.append(Badge(text=f"Disk: {mebibytes}Mi ({pct}%)", variant="metrics"))
+            if health == "healthy" and eph_used / limit >= _VOLUME_NEARLY_FULL_THRESHOLD:
+                health = "degraded"
+                badges.append(Badge(text="Disk nearly full", variant="warning"))
+        else:
+            badges.append(Badge(text=f"Disk: {mebibytes}Mi", variant="metrics"))
+
     restart_count = sum(cs.restart_count for cs in container_statuses) + sum(
         cs.restart_count for cs in (obj.status.init_container_statuses or [])
     )
@@ -223,25 +258,47 @@ _PV_PHASE_HEALTH: dict[str, Health] = {
 }
 
 
-def _describe_pvc(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+# A volume (or, in _describe_pod above, a pod's ephemeral-storage limit)
+# above this fraction used is flagged as a real problem (degraded, not just
+# "healthy" with a big number) -- "pod stuck/evicted, disk full" is a common
+# incident this makes visible instead of silent until something actually
+# breaks. Only escalates a genuinely healthy starting point; a PVC already
+# Pending/Lost/Failed (or a pod already CrashLoopBackOff/Failed) keeps that
+# more specific health as-is.
+_VOLUME_NEARLY_FULL_THRESHOLD = 0.9
+
+
+def _describe_pvc(obj: Any, usage: VolumeUsage | None = None) -> tuple[Health, str, str | None, list[Badge]]:
     phase = obj.status.phase or "Unknown"
     health = _PVC_PHASE_HEALTH.get(phase, "unknown")
     badges = [Badge(text=phase, variant="status")]
-    capacity = (obj.status.capacity or {}).get("storage")
-    if capacity:
-        badges.append(Badge(text=capacity, variant="misc"))
+    if usage and usage.capacity_bytes:
+        badges.append(Badge(text=format_volume_usage(usage), variant="metrics"))
+        if health == "healthy" and usage.used_bytes / usage.capacity_bytes >= _VOLUME_NEARLY_FULL_THRESHOLD:
+            health = "degraded"
+            badges.append(Badge(text="Nearly full", variant="warning"))
+    else:
+        capacity = (obj.status.capacity or {}).get("storage")
+        if capacity:
+            badges.append(Badge(text=capacity, variant="misc"))
     if obj.spec.storage_class_name:
         badges.append(Badge(text=obj.spec.storage_class_name, variant="misc"))
     return health, phase, None, badges
 
 
-def _describe_pv(obj: Any) -> tuple[Health, str, str | None, list[Badge]]:
+def _describe_pv(obj: Any, usage: VolumeUsage | None = None) -> tuple[Health, str, str | None, list[Badge]]:
     phase = obj.status.phase or "Unknown"
     health = _PV_PHASE_HEALTH.get(phase, "unknown")
     badges = [Badge(text=phase, variant="status")]
-    capacity = (obj.spec.capacity or {}).get("storage")
-    if capacity:
-        badges.append(Badge(text=capacity, variant="misc"))
+    if usage and usage.capacity_bytes:
+        badges.append(Badge(text=format_volume_usage(usage), variant="metrics"))
+        if health == "healthy" and usage.used_bytes / usage.capacity_bytes >= _VOLUME_NEARLY_FULL_THRESHOLD:
+            health = "degraded"
+            badges.append(Badge(text="Nearly full", variant="warning"))
+    else:
+        capacity = (obj.spec.capacity or {}).get("storage")
+        if capacity:
+            badges.append(Badge(text=capacity, variant="misc"))
     if obj.spec.persistent_volume_reclaim_policy:
         badges.append(Badge(text=obj.spec.persistent_volume_reclaim_policy, variant="misc"))
     return health, phase, None, badges
@@ -528,8 +585,6 @@ _DESCRIBERS = {
     "CronJob": _describe_cron_job,
     "Service": _describe_service,
     "Ingress": _describe_ingress,
-    "PersistentVolumeClaim": _describe_pvc,
-    "PersistentVolume": _describe_pv,
     "ConfigMap": _describe_config_map,
     "Secret": _describe_secret,
     "ServiceAccount": _describe_service_account,
@@ -557,15 +612,25 @@ def build_node(
     *,
     node_metrics: dict[str, Usage] | None = None,
     pod_metrics: dict[tuple[str, str], Usage] | None = None,
+    pod_ephemeral_storage_usage: dict[tuple[str, str], Decimal] | None = None,
+    pvc_usage: dict[tuple[str, str], VolumeUsage] | None = None,
     crd: str | None = None,
 ) -> GraphNode:
-    # Node and Pod take extra (metrics) arguments the other describers don't,
-    # so they're special-cased here rather than threading an unused param
-    # through every entry in _DESCRIBERS.
+    # Node/Pod/PersistentVolumeClaim/PersistentVolume take extra (metrics)
+    # arguments the other describers don't, so they're special-cased here
+    # rather than threading an unused param through every entry in _DESCRIBERS.
     if kind == "Node":
         health, status_label, ready, extra_badges = _describe_node(obj, node_metrics)
     elif kind == "Pod":
-        health, status_label, ready, extra_badges = _describe_pod(obj, pod_metrics)
+        health, status_label, ready, extra_badges = _describe_pod(obj, pod_metrics, pod_ephemeral_storage_usage)
+    elif kind == "PersistentVolumeClaim":
+        usage = (pvc_usage or {}).get((obj.metadata.namespace, obj.metadata.name))
+        health, status_label, ready, extra_badges = _describe_pvc(obj, usage)
+    elif kind == "PersistentVolume":
+        claim_ref = obj.spec.claim_ref
+        key = (claim_ref.namespace, claim_ref.name) if claim_ref else None
+        usage = (pvc_usage or {}).get(key) if key else None
+        health, status_label, ready, extra_badges = _describe_pv(obj, usage)
     else:
         health, status_label, ready, extra_badges = _DESCRIBERS.get(kind, _describe_custom_resource)(obj)
     age_badge, age, age_seconds = _age_badge(obj)

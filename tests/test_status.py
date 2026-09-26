@@ -3,7 +3,7 @@ from decimal import Decimal
 from kubernetes import client as k8s
 
 from krowser.k8s.custom_resources import AttrDict
-from krowser.k8s.metrics import Usage
+from krowser.k8s.metrics import Usage, VolumeUsage
 from krowser.k8s.status import build_node
 
 
@@ -39,6 +39,74 @@ def test_pod_has_no_usage_badge_when_metrics_unavailable(make_pod):
 
     node_with_empty_metrics = build_node(pod, "Pod", "pod", is_root=True, pod_metrics={})
     assert not any(b.variant == "metrics" for b in node_with_empty_metrics.badges)
+
+
+def test_pod_shows_plain_ephemeral_storage_badge_without_a_limit(make_pod):
+    pod = make_pod("pod-1", "app", namespace="ns")
+
+    node = build_node(
+        pod, "Pod", "pod", is_root=True, pod_ephemeral_storage_usage={("ns", "app"): Decimal(50 * 1024**2)}
+    )
+
+    assert any(b.variant == "metrics" and b.text == "Disk: 50Mi" for b in node.badges)
+    assert node.health == "healthy"
+
+
+def test_pod_shows_percentage_and_degrades_when_ephemeral_storage_limit_nearly_full(make_pod):
+    container = k8s.V1Container(
+        name="app",
+        image="nginx",
+        resources=k8s.V1ResourceRequirements(limits={"ephemeral-storage": "100Mi"}),
+    )
+    pod = make_pod("pod-1", "app", namespace="ns", containers=[container])
+
+    node = build_node(
+        pod, "Pod", "pod", is_root=True, pod_ephemeral_storage_usage={("ns", "app"): Decimal(95 * 1024**2)}
+    )
+
+    assert any(b.variant == "metrics" and b.text == "Disk: 95Mi (95%)" for b in node.badges)
+    assert any(b.variant == "warning" and b.text == "Disk nearly full" for b in node.badges)
+    assert node.health == "degraded"
+
+
+def test_pod_with_ephemeral_storage_below_threshold_stays_healthy(make_pod):
+    container = k8s.V1Container(
+        name="app",
+        image="nginx",
+        resources=k8s.V1ResourceRequirements(limits={"ephemeral-storage": "100Mi"}),
+    )
+    pod = make_pod("pod-1", "app", namespace="ns", containers=[container])
+
+    node = build_node(
+        pod, "Pod", "pod", is_root=True, pod_ephemeral_storage_usage={("ns", "app"): Decimal(10 * 1024**2)}
+    )
+
+    assert any(b.variant == "metrics" and b.text == "Disk: 10Mi (10%)" for b in node.badges)
+    assert not any(b.variant == "warning" for b in node.badges)
+    assert node.health == "healthy"
+
+
+def test_pod_crashloop_not_overridden_healthy_by_low_ephemeral_storage_usage(make_pod):
+    # Nearly-full only escalates a genuinely healthy pod -- it must never
+    # improve an already-bad health signal back to "healthy".
+    pod = make_pod("pod-1", "app", namespace="ns", phase="Running")
+    pod.status.container_statuses[0].state = k8s.V1ContainerState(
+        waiting=k8s.V1ContainerStateWaiting(reason="CrashLoopBackOff")
+    )
+
+    node = build_node(
+        pod, "Pod", "pod", is_root=True, pod_ephemeral_storage_usage={("ns", "app"): Decimal(1024)}
+    )
+
+    assert node.health == "degraded"
+
+
+def test_pod_has_no_ephemeral_storage_badge_without_usage_data(make_pod):
+    pod = make_pod("pod-1", "app", namespace="ns")
+
+    node = build_node(pod, "Pod", "pod", is_root=True)
+
+    assert not any("Disk" in b.text for b in node.badges)
 
 
 def test_pod_shows_restart_badge_when_container_has_restarted(make_pod):
@@ -116,6 +184,70 @@ def test_pvc_phase_health_mapping(make_pvc):
     lost = build_node(make_pvc("p3", "d3", phase="Lost"), "PersistentVolumeClaim", "pvc", True)
 
     assert (bound.health, pending.health, lost.health) == ("healthy", "progressing", "degraded")
+
+
+def test_pvc_shows_usage_badge_and_degrades_when_nearly_full(make_pvc):
+    pvc_obj = make_pvc("p1", "data-1", phase="Bound")
+    usage = VolumeUsage(used_bytes=Decimal(95 * 1024**3), capacity_bytes=Decimal(100 * 1024**3))
+
+    node = build_node(pvc_obj, "PersistentVolumeClaim", "pvc", True, pvc_usage={("ns", "data-1"): usage})
+
+    assert node.health == "degraded"
+    assert any(b.variant == "metrics" and b.text == "95Gi / 100Gi (95%)" for b in node.badges)
+    assert any(b.variant == "warning" and b.text == "Nearly full" for b in node.badges)
+
+
+def test_pvc_with_usage_below_threshold_stays_healthy(make_pvc):
+    pvc_obj = make_pvc("p1", "data-1", phase="Bound")
+    usage = VolumeUsage(used_bytes=Decimal(50 * 1024**3), capacity_bytes=Decimal(100 * 1024**3))
+
+    node = build_node(pvc_obj, "PersistentVolumeClaim", "pvc", True, pvc_usage={("ns", "data-1"): usage})
+
+    assert node.health == "healthy"
+    assert any(b.variant == "metrics" and b.text == "50Gi / 100Gi (50%)" for b in node.badges)
+    assert not any(b.variant == "warning" for b in node.badges)
+
+
+def test_pvc_pending_with_high_usage_does_not_override_progressing(make_pvc):
+    # Nearly-full only escalates a genuinely healthy Bound phase -- a
+    # Pending/Lost PVC already has a more specific, real health signal.
+    pvc_obj = make_pvc("p1", "data-1", phase="Pending")
+    usage = VolumeUsage(used_bytes=Decimal(99 * 1024**3), capacity_bytes=Decimal(100 * 1024**3))
+
+    node = build_node(pvc_obj, "PersistentVolumeClaim", "pvc", True, pvc_usage={("ns", "data-1"): usage})
+
+    assert node.health == "progressing"
+
+
+def test_pvc_falls_back_to_plain_capacity_badge_without_usage(make_pvc):
+    pvc_obj = make_pvc("p1", "data-1", phase="Bound")
+
+    node = build_node(pvc_obj, "PersistentVolumeClaim", "pvc", True)
+
+    assert node.health == "healthy"
+    assert any(b.variant == "misc" and b.text == "1Gi" for b in node.badges)
+    assert not any(b.variant == "metrics" for b in node.badges)
+
+
+def test_pv_shows_usage_via_its_bound_claim_ref(make_pv):
+    pv_obj = make_pv("v1", "pv-1", phase="Bound", claim_ref_namespace="ns", claim_ref_name="data-1")
+    usage = VolumeUsage(used_bytes=Decimal(95 * 1024**3), capacity_bytes=Decimal(100 * 1024**3))
+
+    node = build_node(pv_obj, "PersistentVolume", "pv", True, pvc_usage={("ns", "data-1"): usage})
+
+    assert node.health == "degraded"
+    assert any(b.variant == "metrics" and b.text == "95Gi / 100Gi (95%)" for b in node.badges)
+    assert any(b.variant == "warning" and b.text == "Nearly full" for b in node.badges)
+
+
+def test_pv_without_claim_ref_falls_back_to_plain_capacity_badge(make_pv):
+    pv_obj = make_pv("v1", "pv-1", phase="Available")
+
+    node = build_node(pv_obj, "PersistentVolume", "pv", True, pvc_usage={("ns", "data-1"): VolumeUsage(Decimal(1), Decimal(1))})
+
+    assert node.health == "healthy"
+    assert any(b.variant == "misc" and b.text == "1Gi" for b in node.badges)
+    assert not any(b.variant == "metrics" for b in node.badges)
 
 
 def test_node_condition_health_mapping(make_node):

@@ -8,7 +8,12 @@ from krowser.k8s.client import KubeClientManager
 from krowser.k8s.custom_resources import list_custom_resources, resolve_served_version
 from krowser.k8s.fetchers import FETCHERS_BY_KIND
 from krowser.k8s.getters import get_crd
-from krowser.k8s.metrics import fetch_node_metrics, fetch_pod_metrics
+from krowser.k8s.metrics import (
+    fetch_node_metrics,
+    fetch_pod_ephemeral_storage_usage,
+    fetch_pod_metrics,
+    fetch_pvc_usage,
+)
 from krowser.k8s.resource_types import (
     CUSTOM_RESOURCES_TYPE_ID,
     NAMESPACES_TYPE_ID,
@@ -220,6 +225,28 @@ class GraphBuilder:
         # once per build and only when the graph actually contains that kind.
         node_metrics = fetch_node_metrics(self._mgr, context) if "Node" in world else None
         pod_metrics = fetch_pod_metrics(self._mgr, context, namespace) if "Pod" in world else None
+        # Unlike the two above (one call to metrics.k8s.io total), this is one
+        # real HTTP call per node in the cluster -- see fetch_pvc_usage's
+        # docstring. PersistentVolumeClaim appears in *every* Workloads view
+        # too (via WORKLOAD_RELATED_KINDS), so this is scoped to just the two
+        # storage-focused views themselves rather than "PVC in world", to
+        # avoid hitting every node's kubelet on every Workloads-view poll tick.
+        pvc_usage = (
+            fetch_pvc_usage(self._mgr, context)
+            if "PersistentVolumeClaim" in world
+            and type_id in ("storage/persistentvolumes", "storage/persistentvolumeclaims")
+            else None
+        )
+        # Same one-call-per-node cost/scoping concern as pvc_usage above --
+        # Pod appears in *every* Workloads view, so this is scoped to just
+        # the dedicated Pods view rather than "Pod in world", to avoid
+        # hitting every node's kubelet on every Deployments/StatefulSets/etc.
+        # poll tick too.
+        pod_ephemeral_storage_usage = (
+            fetch_pod_ephemeral_storage_usage(self._mgr, context)
+            if "Pod" in world and type_id == "workloads/pods"
+            else None
+        )
 
         all_nodes: list[GraphNode] = []
         for kind, objs in world.items():
@@ -233,6 +260,8 @@ class GraphBuilder:
                         obj.metadata.uid in root_uids,
                         node_metrics=node_metrics,
                         pod_metrics=pod_metrics,
+                        pod_ephemeral_storage_usage=pod_ephemeral_storage_usage,
+                        pvc_usage=pvc_usage,
                     )
                 )
 

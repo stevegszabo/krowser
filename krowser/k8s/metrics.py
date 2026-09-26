@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 from typing import NamedTuple
 
@@ -12,6 +13,20 @@ _METRICS_VERSION = "v1beta1"
 class Usage(NamedTuple):
     cpu_cores: Decimal
     memory_bytes: Decimal
+
+
+class VolumeUsage(NamedTuple):
+    used_bytes: Decimal
+    capacity_bytes: Decimal
+
+
+def format_volume_usage(usage: VolumeUsage) -> str:
+    used_gib = round(usage.used_bytes / (1024**3))
+    capacity_gib = round(usage.capacity_bytes / (1024**3))
+    text = f"{used_gib}Gi / {capacity_gib}Gi"
+    if usage.capacity_bytes:
+        text += f" ({int(usage.used_bytes / usage.capacity_bytes * 100)}%)"
+    return text
 
 
 def format_usage(usage: Usage) -> str:
@@ -92,4 +107,87 @@ def fetch_pod_metrics(
             memory_total += parse_quantity(container["usage"]["memory"])
         key = (item["metadata"]["namespace"], item["metadata"]["name"])
         usage_by_pod[key] = Usage(cpu_cores=cpu_total, memory_bytes=memory_total)
+    return usage_by_pod
+
+
+def _fetch_node_summaries(mgr: KubeClientManager, context: str | None) -> list[dict]:
+    """Fetches every node's own kubelet Summary API response (reached via the
+    apiserver's node proxy -- no direct network path to kubelets needed),
+    tolerating individual node failures. Shared by fetch_pvc_usage and
+    fetch_pod_ephemeral_storage_usage below, which read different fields out
+    of the same response shape -- core kubelet functionality always
+    available, not an optional install, unlike metrics-server.
+
+    Same best-effort semantics as fetch_node_metrics: any failure (missing
+    RBAC for the node proxy subresource is common, as is a single
+    unreachable node) is swallowed, and one bad node doesn't lose every
+    other node's data.
+    """
+    try:
+        nodes = mgr.core_v1(context).list_node().items
+    except Exception:
+        return []
+
+    summaries = []
+    for node in nodes:
+        try:
+            # _preload_content=False -- the client's default deserialization
+            # for this method's declared `str` return type mangles the
+            # kubelet's real JSON response into a Python dict repr (single
+            # quotes), which then fails to json.loads at all. Reading the raw
+            # bytes ourselves and decoding directly sidesteps that entirely
+            # (same trick fetchers.py's _list_endpoint_slices_tolerant uses
+            # for a different generated-client quirk).
+            response = mgr.core_v1(context).connect_get_node_proxy_with_path(
+                node.metadata.name, "stats/summary", _preload_content=False
+            )
+            summaries.append(json.loads(response.data))
+        except Exception:
+            continue
+    return summaries
+
+
+def fetch_pvc_usage(mgr: KubeClientManager, context: str | None) -> dict[tuple[str, str], VolumeUsage]:
+    """Live per-PVC used/capacity bytes, keyed by (namespace, name). See
+    _fetch_node_summaries for why this reads the kubelet Summary API.
+
+    Deliberately not called on every view PersistentVolumeClaim appears in
+    (e.g. every Workloads view, via WORKLOAD_RELATED_KINDS) -- unlike the
+    metrics-server-backed fetches above (one call total), this is one real
+    HTTP call per node in the cluster, so GraphBuilder only calls this for
+    the two storage-focused views themselves (see builder.py).
+    """
+    usage_by_pvc: dict[tuple[str, str], VolumeUsage] = {}
+    for summary in _fetch_node_summaries(mgr, context):
+        for pod in summary.get("pods", []):
+            for volume in pod.get("volume", []):
+                pvc_ref = volume.get("pvcRef")
+                if not pvc_ref or "usedBytes" not in volume or "capacityBytes" not in volume:
+                    continue
+                key = (pvc_ref["namespace"], pvc_ref["name"])
+                usage_by_pvc[key] = VolumeUsage(
+                    used_bytes=Decimal(volume["usedBytes"]),
+                    capacity_bytes=Decimal(volume["capacityBytes"]),
+                )
+    return usage_by_pvc
+
+
+def fetch_pod_ephemeral_storage_usage(mgr: KubeClientManager, context: str | None) -> dict[tuple[str, str], Decimal]:
+    """Live per-pod ephemeral-storage used bytes (writable container layer +
+    logs + emptyDir combined -- exactly what the kubelet itself sums to
+    decide whether to evict a pod under DiskPressure), keyed by
+    (namespace, name). See _fetch_node_summaries for why this reads the
+    kubelet Summary API; same one-call-per-node cost and scoping concern as
+    fetch_pvc_usage -- GraphBuilder only calls this for the dedicated Pods
+    view, not every Workloads view Pod appears in.
+    """
+    usage_by_pod: dict[tuple[str, str], Decimal] = {}
+    for summary in _fetch_node_summaries(mgr, context):
+        for pod in summary.get("pods", []):
+            pod_ref = pod.get("podRef")
+            ephemeral = pod.get("ephemeral-storage")
+            if not pod_ref or not ephemeral or "usedBytes" not in ephemeral:
+                continue
+            key = (pod_ref["namespace"], pod_ref["name"])
+            usage_by_pod[key] = Decimal(ephemeral["usedBytes"])
     return usage_by_pod
