@@ -22,6 +22,10 @@ const RELATION_LABEL = {
 // only for these top-level controller kinds -- never Pod.
 const WORKLOAD_CONTROLLER_KINDS = ['DaemonSet', 'Deployment', 'StatefulSet', 'CronJob', 'Job'];
 
+// Kept in sync with krowser.k8s.scale.SCALABLE_KINDS -- only these two kinds
+// have a native replicas field and a real /scale subresource.
+const SCALABLE_KINDS = ['Deployment', 'StatefulSet'];
+
 // Keep in sync with the cytoscape node style's `height` below -- see
 // applyMeasuredHeights() for why this is only a fallback, not the truth.
 const DEFAULT_NODE_HEIGHT = 80;
@@ -142,12 +146,17 @@ function graphView() {
         const data = this.hoveredNode.data();
         const containers = data.containers || [];
         // Clamp so the menu can't render past the right/bottom edge of the
-        // window. Pod nodes get four extra rows (Get pod logs, Get pod
-        // description, Execute command, Scan for vulnerabilities); workload
-        // controller kinds get one extra row (Scan with Kubescape); both are
-        // on top of the two universal rows ("Get <kind>" and "Get events").
+        // window. Pod nodes get five extra rows (Get pod logs, Get pod
+        // description, Execute command, Scan for vulnerabilities, Terminate
+        // pod); workload controller kinds get one extra row (Scan with
+        // Kubescape); Deployment/StatefulSet get one extra row (Scale
+        // workload); all are on top of the two universal rows ("Get <kind>"
+        // and "Get events").
         const itemCount =
-          2 + (data.kind === 'Pod' ? 4 : 0) + (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0);
+          2 +
+          (data.kind === 'Pod' ? 5 : 0) +
+          (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0) +
+          (SCALABLE_KINDS.includes(data.kind) ? 1 : 0);
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -582,6 +591,37 @@ function graphView() {
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'kubescan' };
       this.contextMenu.visible = false;
+    },
+
+    scaleFromContextMenu() {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'scale' };
+      this.contextMenu.visible = false;
+    },
+
+    // Deliberately doesn't open the detail pane -- unlike every other
+    // context-menu action, this one just fires the delete and is done. A
+    // native confirm() is the only friction, since a delete (unlike Scale's
+    // bounded +/- steps) can't be dialed back once it's sent -- a pod with
+    // no controller owning it never comes back. Any failure (e.g. RBAC)
+    // surfaces via the graph pane's own error banner since there's no pane
+    // of its own to show it in.
+    async terminatePodFromContextMenu() {
+      const resource = this.contextMenu.resource;
+      this.contextMenu.visible = false;
+      if (!resource) return;
+      if (!window.confirm(`Terminate pod "${resource.name}"? A replacement will be created automatically if it's managed by a controller.`)) {
+        return;
+      }
+      try {
+        await api.terminatePod({
+          namespace: resource.namespace,
+          name: resource.name,
+          context: this.$store.app.context,
+        });
+      } catch (e) {
+        this.$store.app.error = e.message;
+      }
     },
 
     viewLogsFromContextMenu() {

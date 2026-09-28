@@ -229,6 +229,11 @@
             ></button>
             <button
               class="krw-context-menu-item"
+              x-show="contextMenu.resource && ['Deployment', 'StatefulSet'].includes(contextMenu.resource.kind)"
+              @click="scaleFromContextMenu()"
+            >Scale workload</button>
+            <button
+              class="krw-context-menu-item"
               x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
               @click="viewLogsFromContextMenu()"
             >Get pod logs</button>
@@ -252,6 +257,11 @@
               x-show="contextMenu.resource && ['DaemonSet', 'Deployment', 'StatefulSet', 'CronJob', 'Job'].includes(contextMenu.resource.kind)"
               @click="kubescanFromContextMenu()"
             >Scan with Kubescape</button>
+            <button
+              class="krw-context-menu-item krw-context-menu-item-danger"
+              x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
+              @click="terminatePodFromContextMenu()"
+            >Terminate</button>
           </div>
         </template>
       </main>
@@ -276,6 +286,7 @@
               <span class="krw-detail-mode" x-show="viewMode === 'describe'">Describe</span>
               <span class="krw-detail-mode" x-show="viewMode === 'events'">Events</span>
               <span class="krw-detail-mode" x-show="viewMode === 'kubescan'">Kubescape</span>
+              <span class="krw-detail-mode" x-show="viewMode === 'scale'">Scale</span>
               <template x-if="viewMode === 'logs'">
                 <span class="krw-detail-mode-group">
                   <span class="krw-detail-mode">Logs:</span>
@@ -384,6 +395,35 @@
                 <input type="checkbox" x-model="showScanCommand" />
                 Show command
               </label>
+            </div>
+          </template>
+          <template x-if="viewMode === 'scale'">
+            <div class="krw-scale-toolbar">
+              <span class="krw-exec-status" x-text="'current: ' + (currentReplicas === null ? '—' : currentReplicas)"></span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                class="krw-scale-input"
+                x-model.number="targetReplicas"
+                :disabled="scaling || currentReplicas === null"
+                @keydown.enter="scaleWorkload()"
+              />
+              <button
+                class="krw-exec-run-btn"
+                @click="scaleWorkload()"
+                :disabled="scaling || currentReplicas === null || targetReplicas === null || !Number.isInteger(targetReplicas) || targetReplicas < 0 || targetReplicas === currentReplicas"
+              >
+                <span x-show="targetReplicas > currentReplicas">Scale Up</span>
+                <span x-show="targetReplicas < currentReplicas">Scale Down</span>
+                <span x-show="targetReplicas === currentReplicas">Scale</span>
+              </button>
+            </div>
+          </template>
+          <template x-if="showScanCommand && ((viewMode === 'vulnscan' && scanResults && scanResults.command) || (viewMode === 'kubescan' && kubescanResults && kubescanResults.command))">
+            <div class="krw-scan-command">
+              <span class="krw-scan-command-label">$</span>
+              <code x-text="viewMode === 'vulnscan' ? scanResults.command : kubescanResults.command"></code>
             </div>
           </template>
           <div class="krw-detail-body" :class="{ 'krw-detail-body-exec': viewMode === 'exec' }">
@@ -610,13 +650,20 @@
                 </template>
               </div>
             </template>
+            <template x-if="!loading && !error && viewMode === 'scale'">
+              <div class="krw-scale-panel">
+                <template x-if="!rolloutStatus">
+                  <div class="krw-detail-message">Set a target replica count and click Scale.</div>
+                </template>
+                <template x-if="rolloutStatus">
+                  <div class="krw-scale-rollout" :class="{ 'is-complete': rolloutStatus.complete }">
+                    <span class="krw-scale-rollout-spinner" x-show="!rolloutStatus.complete"></span>
+                    <span x-text="rolloutStatus.message"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
           </div>
-          <template x-if="showScanCommand && ((viewMode === 'vulnscan' && scanResults && scanResults.command) || (viewMode === 'kubescan' && kubescanResults && kubescanResults.command))">
-            <div class="krw-scan-command">
-              <span class="krw-scan-command-label">$</span>
-              <code x-text="viewMode === 'vulnscan' ? scanResults.command : kubescanResults.command"></code>
-            </div>
-          </template>
         </aside>
       </template>
     </div>

@@ -3,13 +3,16 @@ from datetime import datetime, timezone
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.custom_resources import get_custom_resource, resolve_served_version
 from krowser.k8s.getters import GETTERS_BY_KIND, get_crd, get_pod_logs, get_resource_events
+from krowser.k8s.pod_actions import terminate_pod
 from krowser.k8s.pod_describe import describe_pod, event_rows
+from krowser.k8s.scale import SCALABLE_KINDS, get_replicas, get_rollout_status, scale_workload
 from krowser.kubescape_scan import scan_workload
 from krowser.vuln_scan import scan_image
 
@@ -149,6 +152,21 @@ def get_pod_logs_route(
     return {"logs": logs}
 
 
+@router.delete("/pod")
+def delete_pod_route(
+    name: str,
+    namespace: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    try:
+        terminate_pod(mgr, context, namespace, name)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"status": "terminated"}
+
+
 @router.get("/pod-vulnscan")
 def get_pod_vulnscan(
     name: str,
@@ -185,3 +203,64 @@ def get_workload_kubescan(
         raise to_http_exception(exc) from exc
 
     return result
+
+
+def _validate_scalable(kind: str) -> None:
+    if kind not in SCALABLE_KINDS:
+        raise HTTPException(status_code=400, detail=f"scaling is not supported for kind: {kind}")
+
+
+@router.get("/scale")
+def get_scale(
+    kind: str,
+    name: str,
+    namespace: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    _validate_scalable(kind)
+    try:
+        replicas = get_replicas(mgr, context, kind, namespace, name)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"replicas": replicas}
+
+
+class ScaleRequest(BaseModel):
+    kind: str
+    name: str
+    namespace: str
+    replicas: int
+    context: str | None = None
+
+
+@router.post("/scale")
+def post_scale(
+    body: ScaleRequest,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    _validate_scalable(body.kind)
+    if body.replicas < 0:
+        raise HTTPException(status_code=400, detail="replicas must be >= 0")
+    try:
+        replicas = scale_workload(mgr, body.context, body.kind, body.namespace, body.name, body.replicas)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"replicas": replicas}
+
+
+@router.get("/rollout-status")
+def get_rollout_status_route(
+    kind: str,
+    name: str,
+    namespace: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    _validate_scalable(kind)
+    try:
+        return get_rollout_status(mgr, context, kind, namespace, name)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc

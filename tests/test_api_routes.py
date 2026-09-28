@@ -421,6 +421,34 @@ def test_pod_logs_maps_resource_access_error(client, monkeypatch):
     assert res.status_code == 404
 
 
+def test_delete_pod_terminates(client, monkeypatch):
+    captured = {}
+
+    def fake_terminate(mgr, context, namespace, name):
+        captured.update(namespace=namespace, name=name)
+
+    monkeypatch.setattr(routes_resource_module, "terminate_pod", fake_terminate)
+
+    res = client.delete("/api/pod", params={"name": "web-abc", "namespace": "ns"})
+
+    assert res.status_code == 200
+    assert res.json() == {"status": "terminated"}
+    assert captured == {"namespace": "ns", "name": "web-abc"}
+
+
+def test_delete_pod_maps_api_error(client, monkeypatch):
+    from kubernetes.client.rest import ApiException
+
+    def _raise(mgr, context, namespace, name):
+        raise ApiException(status=403, reason="Forbidden")
+
+    monkeypatch.setattr(routes_resource_module, "terminate_pod", _raise)
+
+    res = client.delete("/api/pod", params={"name": "web-abc", "namespace": "ns"})
+
+    assert res.status_code == 403
+
+
 def test_pod_vulnscan_resolves_image_by_container_name(client, monkeypatch, make_pod):
     pod = make_pod("pod-1", "web-abc", namespace="ns")
     monkeypatch.setitem(
@@ -597,3 +625,90 @@ def test_resource_yaml_supports_custom_resource(client, monkeypatch, make_crd):
     yaml_text = res.json()["yaml"]
     assert "kind: Widget" in yaml_text
     assert "name: my-widget" in yaml_text
+
+
+def test_get_scale_returns_current_replicas(client, monkeypatch):
+    monkeypatch.setattr(routes_resource_module, "get_replicas", lambda mgr, context, kind, ns, name: 3)
+
+    res = client.get("/api/scale", params={"kind": "Deployment", "name": "web", "namespace": "ns"})
+
+    assert res.status_code == 200
+    assert res.json() == {"replicas": 3}
+
+
+def test_get_scale_rejects_unsupported_kind(client):
+    res = client.get("/api/scale", params={"kind": "DaemonSet", "name": "web", "namespace": "ns"})
+
+    assert res.status_code == 400
+
+
+def test_post_scale_applies_new_replica_count(client, monkeypatch):
+    captured = {}
+
+    def fake_scale(mgr, context, kind, namespace, name, replicas):
+        captured.update(kind=kind, namespace=namespace, name=name, replicas=replicas)
+        return replicas
+
+    monkeypatch.setattr(routes_resource_module, "scale_workload", fake_scale)
+
+    res = client.post(
+        "/api/scale",
+        json={"kind": "StatefulSet", "name": "web", "namespace": "ns", "replicas": 4},
+    )
+
+    assert res.status_code == 200
+    assert res.json() == {"replicas": 4}
+    assert captured == {"kind": "StatefulSet", "namespace": "ns", "name": "web", "replicas": 4}
+
+
+def test_post_scale_rejects_unsupported_kind(client):
+    res = client.post(
+        "/api/scale",
+        json={"kind": "Job", "name": "web", "namespace": "ns", "replicas": 2},
+    )
+
+    assert res.status_code == 400
+
+
+def test_post_scale_rejects_negative_replicas(client):
+    res = client.post(
+        "/api/scale",
+        json={"kind": "Deployment", "name": "web", "namespace": "ns", "replicas": -1},
+    )
+
+    assert res.status_code == 400
+
+
+def test_post_scale_maps_api_error(client, monkeypatch):
+    from kubernetes.client.rest import ApiException
+
+    def fake_scale(mgr, context, kind, namespace, name, replicas):
+        raise ApiException(status=403, reason="Forbidden")
+
+    monkeypatch.setattr(routes_resource_module, "scale_workload", fake_scale)
+
+    res = client.post(
+        "/api/scale",
+        json={"kind": "Deployment", "name": "web", "namespace": "ns", "replicas": 2},
+    )
+
+    assert res.status_code == 403
+
+
+def test_get_rollout_status_returns_result(client, monkeypatch):
+    monkeypatch.setattr(
+        routes_resource_module,
+        "get_rollout_status",
+        lambda mgr, context, kind, ns, name: {"complete": True, "message": "deployment successfully rolled out"},
+    )
+
+    res = client.get("/api/rollout-status", params={"kind": "Deployment", "name": "web", "namespace": "ns"})
+
+    assert res.status_code == 200
+    assert res.json() == {"complete": True, "message": "deployment successfully rolled out"}
+
+
+def test_get_rollout_status_rejects_unsupported_kind(client):
+    res = client.get("/api/rollout-status", params={"kind": "DaemonSet", "name": "web", "namespace": "ns"})
+
+    assert res.status_code == 400

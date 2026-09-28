@@ -1,13 +1,6 @@
 class ApiError extends Error {}
 
-async function apiGet(path, params = {}) {
-  const url = new URL(path, window.location.origin);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== null && value !== undefined && value !== '') {
-      url.searchParams.set(key, value);
-    }
-  }
-  const res = await fetch(url);
+async function handleJsonResponse(res) {
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -19,6 +12,35 @@ async function apiGet(path, params = {}) {
     throw new ApiError(`${res.status} ${detail}`);
   }
   return res.json();
+}
+
+async function apiGet(path, params = {}) {
+  const url = new URL(path, window.location.origin);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      url.searchParams.set(key, value);
+    }
+  }
+  return handleJsonResponse(await fetch(url));
+}
+
+async function apiPost(path, body = {}) {
+  const res = await fetch(new URL(path, window.location.origin), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return handleJsonResponse(res);
+}
+
+async function apiDelete(path, params = {}) {
+  const url = new URL(path, window.location.origin);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      url.searchParams.set(key, value);
+    }
+  }
+  return handleJsonResponse(await fetch(url, { method: 'DELETE' }));
 }
 
 const api = {
@@ -34,4 +56,8 @@ const api = {
   getPodLogs: (params) => apiGet('/api/pod-logs', params),
   getPodVulnScan: (params) => apiGet('/api/pod-vulnscan', params),
   getWorkloadKubescan: (params) => apiGet('/api/workload-kubescan', params),
+  getScale: (params) => apiGet('/api/scale', params),
+  scaleWorkload: (body) => apiPost('/api/scale', body),
+  getRolloutStatus: (params) => apiGet('/api/rollout-status', params),
+  terminatePod: (params) => apiDelete('/api/pod', params),
 };

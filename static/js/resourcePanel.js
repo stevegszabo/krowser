@@ -60,6 +60,10 @@ function resourcePanel() {
     scanResults: null,
     expandedFindings: [],
     kubescanResults: null,
+    currentReplicas: null,
+    targetReplicas: null,
+    scaling: false,
+    rolloutStatus: null,
     // Off by default -- the actual command (esp. Kubescape's, with its temp
     // --output path) is diagnostic detail most viewers don't need to see on
     // every scan. Deliberately not reset per-load, so a user who turns it on
@@ -74,6 +78,8 @@ function resourcePanel() {
     _lastExecKey: null,
     _lastScanKey: null,
     _lastKubescanKey: null,
+    _lastScaleKey: null,
+    _rolloutPollTimer: null,
     _execSocket: null,
     _execTerm: null,
     _execFitAddon: null,
@@ -158,6 +164,10 @@ function resourcePanel() {
         this.scanResults = null;
         this.expandedFindings = [];
         this.kubescanResults = null;
+        this.currentReplicas = null;
+        this.targetReplicas = null;
+        this.rolloutStatus = null;
+        this.stopRolloutWatch();
         this.setLoading(false);
         this.resetExec();
         return;
@@ -212,6 +222,43 @@ function resourcePanel() {
           this._lastKubescanKey = selected.id;
           this.kubescanResults = null;
           this.expandedFindings = [];
+        }
+        return;
+      }
+
+      if (this.viewMode === 'scale') {
+        this.error = null;
+        // Scaling itself (and the rollout watch it kicks off) is
+        // user-triggered like vulnscan/kubescan above, but the current
+        // replica count is auto-fetched every time this view opens so the
+        // toolbar shows a live number immediately. Only reset the target
+        // input and any in-progress rollout watch when the underlying
+        // resource actually changed -- flipping to another view mode and
+        // back on the same resource must not interrupt a running watch.
+        const scaleKey = selected.id;
+        if (scaleKey !== this._lastScaleKey) {
+          this._lastScaleKey = scaleKey;
+          this.stopRolloutWatch();
+          this.rolloutStatus = null;
+          this.targetReplicas = null;
+        }
+        this.setLoading(true);
+        try {
+          const res = await api.getScale({
+            kind: selected.kind,
+            namespace: selected.namespace,
+            name: selected.name,
+            context: this.$store.app.context,
+          });
+          if (requestId !== this.requestSeq) return;
+          this.currentReplicas = res.replicas;
+          if (this.targetReplicas === null) this.targetReplicas = res.replicas;
+        } catch (e) {
+          if (requestId !== this.requestSeq) return;
+          this.error = e.message;
+          this.currentReplicas = null;
+        } finally {
+          if (requestId === this.requestSeq) this.setLoading(false);
         }
         return;
       }
@@ -371,6 +418,75 @@ function resourcePanel() {
         this.kubescanResults = null;
       } finally {
         if (requestId === this.requestSeq) this.setLoading(false);
+      }
+    },
+
+    // Applies the target replica count via the resource's /scale
+    // subresource, then starts watching rollout status in the same pane --
+    // mirrors `kubectl scale` followed by `kubectl rollout status`. Uses the
+    // local `scaling` flag (not the global `loading` used by
+    // describe/logs/etc.) to guard the toolbar's Scale button specifically,
+    // so the rollout status area stays visible and updating underneath
+    // rather than being replaced by a full "Loading..." overlay.
+    async scaleWorkload() {
+      const selected = this.$store.app.detailResource;
+      if (!selected || this.scaling || this.currentReplicas === null) return;
+      const target = this.targetReplicas;
+      if (!Number.isInteger(target) || target < 0 || target === this.currentReplicas) return;
+
+      const requestId = ++this.requestSeq;
+      this.scaling = true;
+      this.error = null;
+      this.stopRolloutWatch();
+      this.rolloutStatus = null;
+      try {
+        const res = await api.scaleWorkload({
+          kind: selected.kind,
+          namespace: selected.namespace,
+          name: selected.name,
+          replicas: target,
+          context: this.$store.app.context,
+        });
+        if (requestId !== this.requestSeq) return;
+        this.currentReplicas = res.replicas;
+        this.startRolloutWatch(selected);
+      } catch (e) {
+        if (requestId !== this.requestSeq) return;
+        this.error = e.message;
+      } finally {
+        if (requestId === this.requestSeq) this.scaling = false;
+      }
+    },
+
+    // Polls rollout status every 2s -- mirrors `kubectl rollout status
+    // --watch` without needing a server-side streaming endpoint, consistent
+    // with the app's existing polling convention for everything except Exec
+    // (which genuinely needs a live two-way stream).
+    startRolloutWatch(selected) {
+      this.stopRolloutWatch();
+      const poll = async () => {
+        try {
+          const status = await api.getRolloutStatus({
+            kind: selected.kind,
+            namespace: selected.namespace,
+            name: selected.name,
+            context: this.$store.app.context,
+          });
+          this.rolloutStatus = status;
+          if (status.complete) this.stopRolloutWatch();
+        } catch (e) {
+          this.rolloutStatus = { complete: true, message: e.message };
+          this.stopRolloutWatch();
+        }
+      };
+      poll();
+      this._rolloutPollTimer = setInterval(poll, 2000);
+    },
+
+    stopRolloutWatch() {
+      if (this._rolloutPollTimer) {
+        clearInterval(this._rolloutPollTimer);
+        this._rolloutPollTimer = null;
       }
     },
 

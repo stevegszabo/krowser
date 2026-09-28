@@ -62,8 +62,16 @@ def _describe_pod(
         for cs in container_statuses
     )
 
-    if crash_looping:
-        health: Health = "degraded"
+    if obj.metadata.deletion_timestamp is not None:
+        # A pod's phase doesn't change once deletion is requested -- it stays
+        # "Running" for however long the container takes to shut down, which
+        # is exactly why `kubectl get pods` overrides the displayed status to
+        # "Terminating" here regardless of phase, rather than leaving it
+        # looking healthy for the whole grace period.
+        health: Health = "progressing"
+        status_label = "Terminating"
+    elif crash_looping:
+        health = "degraded"
         status_label = "CrashLoopBackOff"
     elif phase in ("Running", "Succeeded"):
         health = "healthy"

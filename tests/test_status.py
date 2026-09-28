@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from kubernetes import client as k8s
@@ -5,6 +6,30 @@ from kubernetes import client as k8s
 from krowser.k8s.custom_resources import AttrDict
 from krowser.k8s.metrics import Usage, VolumeUsage
 from krowser.k8s.status import build_node
+
+
+def test_pod_terminating_overrides_running_phase_as_progressing(make_pod):
+    pod = make_pod("pod-1", "app", phase="Running")
+    pod.metadata.deletion_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    node = build_node(pod, "Pod", "pod", is_root=True)
+
+    assert node.health == "progressing"
+    assert node.status_label == "Terminating"
+
+
+def test_pod_terminating_takes_priority_over_crashloop(make_pod):
+    pod = make_pod("pod-1", "app", phase="Running")
+    pod.metadata.deletion_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    pod.status.container_statuses[0].ready = False
+    pod.status.container_statuses[0].state = k8s.V1ContainerState(
+        waiting=k8s.V1ContainerStateWaiting(reason="CrashLoopBackOff")
+    )
+
+    node = build_node(pod, "Pod", "pod", is_root=True)
+
+    assert node.health == "progressing"
+    assert node.status_label == "Terminating"
 
 
 def test_pod_crashloop_overrides_running_phase_as_degraded(make_pod):
