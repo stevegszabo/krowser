@@ -63,6 +63,7 @@ function resourcePanel() {
     currentReplicas: null,
     targetReplicas: null,
     scaling: false,
+    restarting: false,
     rolloutStatus: null,
     // Off by default -- the actual command (esp. Kubescape's, with its temp
     // --output path) is diagnostic detail most viewers don't need to see on
@@ -79,6 +80,7 @@ function resourcePanel() {
     _lastScanKey: null,
     _lastKubescanKey: null,
     _lastScaleKey: null,
+    _lastRestartKey: null,
     _rolloutPollTimer: null,
     _execSocket: null,
     _execTerm: null,
@@ -259,6 +261,20 @@ function resourcePanel() {
           this.currentReplicas = null;
         } finally {
           if (requestId === this.requestSeq) this.setLoading(false);
+        }
+        return;
+      }
+
+      if (this.viewMode === 'restart') {
+        this.setLoading(false);
+        this.error = null;
+        // Purely user-triggered, same shape as vulnscan/kubescan -- there's
+        // no "current state" to auto-fetch here, just the rollout watch from
+        // the last restart, which is only reset when the resource changes.
+        if (selected.id !== this._lastRestartKey) {
+          this._lastRestartKey = selected.id;
+          this.stopRolloutWatch();
+          this.rolloutStatus = null;
         }
         return;
       }
@@ -455,6 +471,35 @@ function resourcePanel() {
         this.error = e.message;
       } finally {
         if (requestId === this.requestSeq) this.scaling = false;
+      }
+    },
+
+    // Equivalent to `kubectl rollout restart` -- same rollout-watch handoff
+    // as scaleWorkload() above, reusing the same generic startRolloutWatch
+    // (it just takes the selected resource, not anything scale-specific).
+    async restartWorkload() {
+      const selected = this.$store.app.detailResource;
+      if (!selected || this.restarting) return;
+
+      const requestId = ++this.requestSeq;
+      this.restarting = true;
+      this.error = null;
+      this.stopRolloutWatch();
+      this.rolloutStatus = null;
+      try {
+        await api.restartWorkload({
+          kind: selected.kind,
+          namespace: selected.namespace,
+          name: selected.name,
+          context: this.$store.app.context,
+        });
+        if (requestId !== this.requestSeq) return;
+        this.startRolloutWatch(selected);
+      } catch (e) {
+        if (requestId !== this.requestSeq) return;
+        this.error = e.message;
+      } finally {
+        if (requestId === this.requestSeq) this.restarting = false;
       }
     },
 

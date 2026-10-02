@@ -26,6 +26,11 @@ const WORKLOAD_CONTROLLER_KINDS = ['DaemonSet', 'Deployment', 'StatefulSet', 'Cr
 // have a native replicas field and a real /scale subresource.
 const SCALABLE_KINDS = ['Deployment', 'StatefulSet'];
 
+// Kept in sync with krowser.k8s.restart.RESTARTABLE_KINDS -- every kind
+// `kubectl rollout restart` supports. DaemonSet has no replica count (so
+// it's not in SCALABLE_KINDS above) but does have a pod template to roll.
+const RESTARTABLE_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet'];
+
 // Keep in sync with the cytoscape node style's `height` below -- see
 // applyMeasuredHeights() for why this is only a fallback, not the truth.
 const DEFAULT_NODE_HEIGHT = 80;
@@ -150,13 +155,15 @@ function graphView() {
         // description, Execute command, Scan for vulnerabilities, Terminate
         // pod); workload controller kinds get one extra row (Scan with
         // Kubescape); Deployment/StatefulSet get one extra row (Scale
-        // workload); all are on top of the two universal rows ("Get <kind>"
-        // and "Get events").
+        // workload); Deployment/StatefulSet/DaemonSet get one extra row
+        // (Restart workload); all are on top of the two universal rows
+        // ("Get <kind>" and "Get events").
         const itemCount =
           2 +
           (data.kind === 'Pod' ? 5 : 0) +
           (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0) +
-          (SCALABLE_KINDS.includes(data.kind) ? 1 : 0);
+          (SCALABLE_KINDS.includes(data.kind) ? 1 : 0) +
+          (RESTARTABLE_KINDS.includes(data.kind) ? 1 : 0);
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -596,6 +603,12 @@ function graphView() {
     scaleFromContextMenu() {
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'scale' };
+      this.contextMenu.visible = false;
+    },
+
+    restartFromContextMenu() {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'restart' };
       this.contextMenu.visible = false;
     },
 

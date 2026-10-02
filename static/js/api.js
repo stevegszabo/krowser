@@ -60,4 +60,5 @@ const api = {
   scaleWorkload: (body) => apiPost('/api/scale', body),
   getRolloutStatus: (params) => apiGet('/api/rollout-status', params),
   terminatePod: (params) => apiDelete('/api/pod', params),
+  restartWorkload: (body) => apiPost('/api/restart', body),
 };

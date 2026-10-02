@@ -234,6 +234,11 @@
             >Scale workload</button>
             <button
               class="krw-context-menu-item"
+              x-show="contextMenu.resource && ['Deployment', 'StatefulSet', 'DaemonSet'].includes(contextMenu.resource.kind)"
+              @click="restartFromContextMenu()"
+            >Restart workload</button>
+            <button
+              class="krw-context-menu-item"
               x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
               @click="viewLogsFromContextMenu()"
             >Get pod logs</button>
@@ -287,6 +292,7 @@
               <span class="krw-detail-mode" x-show="viewMode === 'events'">Events</span>
               <span class="krw-detail-mode" x-show="viewMode === 'kubescan'">Kubescape</span>
               <span class="krw-detail-mode" x-show="viewMode === 'scale'">Scale</span>
+              <span class="krw-detail-mode" x-show="viewMode === 'restart'">Restart</span>
               <template x-if="viewMode === 'logs'">
                 <span class="krw-detail-mode-group">
                   <span class="krw-detail-mode">Logs:</span>
@@ -418,6 +424,15 @@
                 <span x-show="targetReplicas < currentReplicas">Scale Down</span>
                 <span x-show="targetReplicas === currentReplicas">Scale</span>
               </button>
+            </div>
+          </template>
+          <template x-if="viewMode === 'restart'">
+            <div class="krw-scale-toolbar">
+              <button
+                class="krw-exec-run-btn"
+                @click="restartWorkload()"
+                :disabled="restarting"
+              >Restart</button>
             </div>
           </template>
           <template x-if="showScanCommand && ((viewMode === 'vulnscan' && scanResults && scanResults.command) || (viewMode === 'kubescan' && kubescanResults && kubescanResults.command))">
@@ -654,6 +669,19 @@
               <div class="krw-scale-panel">
                 <template x-if="!rolloutStatus">
                   <div class="krw-detail-message">Set a target replica count and click Scale.</div>
+                </template>
+                <template x-if="rolloutStatus">
+                  <div class="krw-scale-rollout" :class="{ 'is-complete': rolloutStatus.complete }">
+                    <span class="krw-scale-rollout-spinner" x-show="!rolloutStatus.complete"></span>
+                    <span x-text="rolloutStatus.message"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'restart'">
+              <div class="krw-scale-panel">
+                <template x-if="!rolloutStatus">
+                  <div class="krw-detail-message">Click Restart to perform a rolling restart of every pod.</div>
                 </template>
                 <template x-if="rolloutStatus">
                   <div class="krw-scale-rollout" :class="{ 'is-complete': rolloutStatus.complete }">

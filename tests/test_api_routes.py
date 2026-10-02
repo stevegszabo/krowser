@@ -709,6 +709,49 @@ def test_get_rollout_status_returns_result(client, monkeypatch):
 
 
 def test_get_rollout_status_rejects_unsupported_kind(client):
-    res = client.get("/api/rollout-status", params={"kind": "DaemonSet", "name": "web", "namespace": "ns"})
+    res = client.get("/api/rollout-status", params={"kind": "Job", "name": "web", "namespace": "ns"})
 
     assert res.status_code == 400
+
+
+def test_post_restart_applies_restart(client, monkeypatch):
+    captured = {}
+
+    def fake_restart(mgr, context, kind, namespace, name):
+        captured.update(kind=kind, namespace=namespace, name=name)
+
+    monkeypatch.setattr(routes_resource_module, "restart_workload", fake_restart)
+
+    res = client.post(
+        "/api/restart",
+        json={"kind": "DaemonSet", "name": "web", "namespace": "ns"},
+    )
+
+    assert res.status_code == 200
+    assert res.json() == {"status": "restarted"}
+    assert captured == {"kind": "DaemonSet", "namespace": "ns", "name": "web"}
+
+
+def test_post_restart_rejects_unsupported_kind(client):
+    res = client.post(
+        "/api/restart",
+        json={"kind": "Job", "name": "web", "namespace": "ns"},
+    )
+
+    assert res.status_code == 400
+
+
+def test_post_restart_maps_api_error(client, monkeypatch):
+    from kubernetes.client.rest import ApiException
+
+    def fake_restart(mgr, context, kind, namespace, name):
+        raise ApiException(status=403, reason="Forbidden")
+
+    monkeypatch.setattr(routes_resource_module, "restart_workload", fake_restart)
+
+    res = client.post(
+        "/api/restart",
+        json={"kind": "Deployment", "name": "web", "namespace": "ns"},
+    )
+
+    assert res.status_code == 403
