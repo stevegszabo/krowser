@@ -13,6 +13,7 @@ from krowser.k8s.getters import GETTERS_BY_KIND, get_crd, get_pod_logs, get_reso
 from krowser.k8s.pod_actions import terminate_pod
 from krowser.k8s.pod_describe import describe_pod, event_rows
 from krowser.k8s.restart import RESTARTABLE_KINDS, restart_workload
+from krowser.k8s.rollback import ROLLBACK_KINDS, get_rollout_history, rollback_deployment
 from krowser.k8s.rollout import ROLLOUT_STATUS_KINDS, get_rollout_status
 from krowser.k8s.scale import SCALABLE_KINDS, get_replicas, scale_workload
 from krowser.kubescape_scan import scan_workload
@@ -287,3 +288,44 @@ def get_rollout_status_route(
         return get_rollout_status(mgr, context, kind, namespace, name)
     except Exception as exc:
         raise to_http_exception(exc) from exc
+
+
+@router.get("/rollout-history")
+def get_rollout_history_route(
+    kind: str,
+    name: str,
+    namespace: str,
+    context: str | None = None,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    _validate_kind(kind, ROLLBACK_KINDS, "rollout history")
+    try:
+        history = get_rollout_history(mgr, context, namespace, name)
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"history": history}
+
+
+class RollbackRequest(BaseModel):
+    kind: str
+    name: str
+    namespace: str
+    revision: int
+    context: str | None = None
+
+
+@router.post("/rollback")
+def post_rollback(
+    body: RollbackRequest,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    _validate_kind(body.kind, ROLLBACK_KINDS, "rollback")
+    try:
+        revision = rollback_deployment(mgr, body.context, body.namespace, body.name, body.revision)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"revision": revision}

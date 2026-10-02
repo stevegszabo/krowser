@@ -755,3 +755,80 @@ def test_post_restart_maps_api_error(client, monkeypatch):
     )
 
     assert res.status_code == 403
+
+
+def test_get_rollout_history_returns_result(client, monkeypatch):
+    monkeypatch.setattr(
+        routes_resource_module,
+        "get_rollout_history",
+        lambda mgr, context, namespace, name: [{"revision": 2, "change_cause": "", "age": "unknown", "is_current": True}],
+    )
+
+    res = client.get("/api/rollout-history", params={"kind": "Deployment", "name": "web", "namespace": "ns"})
+
+    assert res.status_code == 200
+    assert res.json()["history"][0]["revision"] == 2
+
+
+def test_get_rollout_history_rejects_unsupported_kind(client):
+    res = client.get("/api/rollout-history", params={"kind": "StatefulSet", "name": "web", "namespace": "ns"})
+
+    assert res.status_code == 400
+
+
+def test_post_rollback_applies_target_revision(client, monkeypatch):
+    captured = {}
+
+    def fake_rollback(mgr, context, namespace, name, revision):
+        captured.update(namespace=namespace, name=name, revision=revision)
+        return revision
+
+    monkeypatch.setattr(routes_resource_module, "rollback_deployment", fake_rollback)
+
+    res = client.post(
+        "/api/rollback",
+        json={"kind": "Deployment", "name": "web", "namespace": "ns", "revision": 2},
+    )
+
+    assert res.status_code == 200
+    assert res.json() == {"revision": 2}
+    assert captured == {"namespace": "ns", "name": "web", "revision": 2}
+
+
+def test_post_rollback_rejects_unsupported_kind(client):
+    res = client.post(
+        "/api/rollback",
+        json={"kind": "StatefulSet", "name": "web", "namespace": "ns", "revision": 1},
+    )
+
+    assert res.status_code == 400
+
+
+def test_post_rollback_returns_404_for_unknown_revision(client, monkeypatch):
+    def fake_rollback(mgr, context, namespace, name, revision):
+        raise ValueError(f"revision {revision} not found for deployment {name}")
+
+    monkeypatch.setattr(routes_resource_module, "rollback_deployment", fake_rollback)
+
+    res = client.post(
+        "/api/rollback",
+        json={"kind": "Deployment", "name": "web", "namespace": "ns", "revision": 99},
+    )
+
+    assert res.status_code == 404
+
+
+def test_post_rollback_maps_api_error(client, monkeypatch):
+    from kubernetes.client.rest import ApiException
+
+    def fake_rollback(mgr, context, namespace, name, revision):
+        raise ApiException(status=403, reason="Forbidden")
+
+    monkeypatch.setattr(routes_resource_module, "rollback_deployment", fake_rollback)
+
+    res = client.post(
+        "/api/rollback",
+        json={"kind": "Deployment", "name": "web", "namespace": "ns", "revision": 1},
+    )
+
+    assert res.status_code == 403

@@ -61,4 +61,6 @@ const api = {
   getRolloutStatus: (params) => apiGet('/api/rollout-status', params),
   terminatePod: (params) => apiDelete('/api/pod', params),
   restartWorkload: (body) => apiPost('/api/restart', body),
+  getRolloutHistory: (params) => apiGet('/api/rollout-history', params),
+  rollbackWorkload: (body) => apiPost('/api/rollback', body),
 };

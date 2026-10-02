@@ -31,6 +31,11 @@ const SCALABLE_KINDS = ['Deployment', 'StatefulSet'];
 // it's not in SCALABLE_KINDS above) but does have a pod template to roll.
 const RESTARTABLE_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet'];
 
+// Kept in sync with krowser.k8s.rollback.ROLLBACK_KINDS -- StatefulSet and
+// DaemonSet keep their history as ControllerRevisions (an opaque patch blob)
+// rather than actual ReplicaSets, so only Deployment rollback is supported.
+const ROLLBACK_KINDS = ['Deployment'];
+
 // Keep in sync with the cytoscape node style's `height` below -- see
 // applyMeasuredHeights() for why this is only a fallback, not the truth.
 const DEFAULT_NODE_HEIGHT = 80;
@@ -156,14 +161,16 @@ function graphView() {
         // pod); workload controller kinds get one extra row (Scan with
         // Kubescape); Deployment/StatefulSet get one extra row (Scale
         // workload); Deployment/StatefulSet/DaemonSet get one extra row
-        // (Restart workload); all are on top of the two universal rows
-        // ("Get <kind>" and "Get events").
+        // (Restart workload); Deployment gets one extra row (Rollback); all
+        // are on top of the two universal rows ("Get <kind>" and "Get
+        // events").
         const itemCount =
           2 +
           (data.kind === 'Pod' ? 5 : 0) +
           (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0) +
           (SCALABLE_KINDS.includes(data.kind) ? 1 : 0) +
-          (RESTARTABLE_KINDS.includes(data.kind) ? 1 : 0);
+          (RESTARTABLE_KINDS.includes(data.kind) ? 1 : 0) +
+          (ROLLBACK_KINDS.includes(data.kind) ? 1 : 0);
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -609,6 +616,12 @@ function graphView() {
     restartFromContextMenu() {
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'restart' };
+      this.contextMenu.visible = false;
+    },
+
+    rollbackFromContextMenu() {
+      this.$store.app.selectedResource = this.contextMenu.resource;
+      this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'rollback' };
       this.contextMenu.visible = false;
     },
 

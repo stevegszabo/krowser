@@ -64,6 +64,8 @@ function resourcePanel() {
     targetReplicas: null,
     scaling: false,
     restarting: false,
+    rolloutHistory: [],
+    rollingBack: false,
     rolloutStatus: null,
     // Off by default -- the actual command (esp. Kubescape's, with its temp
     // --output path) is diagnostic detail most viewers don't need to see on
@@ -81,6 +83,7 @@ function resourcePanel() {
     _lastKubescanKey: null,
     _lastScaleKey: null,
     _lastRestartKey: null,
+    _lastRollbackKey: null,
     _rolloutPollTimer: null,
     _execSocket: null,
     _execTerm: null,
@@ -168,6 +171,7 @@ function resourcePanel() {
         this.kubescanResults = null;
         this.currentReplicas = null;
         this.targetReplicas = null;
+        this.rolloutHistory = [];
         this.rolloutStatus = null;
         this.stopRolloutWatch();
         this.setLoading(false);
@@ -275,6 +279,39 @@ function resourcePanel() {
           this._lastRestartKey = selected.id;
           this.stopRolloutWatch();
           this.rolloutStatus = null;
+        }
+        return;
+      }
+
+      if (this.viewMode === 'rollback') {
+        this.error = null;
+        // The revision list is auto-fetched every time this view opens, same
+        // as describe/events below -- it's cheap and can genuinely change
+        // between visits (a rollback moves which revision is "current").
+        // Only the rollout watch from a just-triggered rollback is reset
+        // solely on a resource change, same pattern as scale/restart.
+        const rollbackKey = selected.id;
+        if (rollbackKey !== this._lastRollbackKey) {
+          this._lastRollbackKey = rollbackKey;
+          this.stopRolloutWatch();
+          this.rolloutStatus = null;
+        }
+        this.setLoading(true);
+        try {
+          const res = await api.getRolloutHistory({
+            kind: selected.kind,
+            namespace: selected.namespace,
+            name: selected.name,
+            context: this.$store.app.context,
+          });
+          if (requestId !== this.requestSeq) return;
+          this.rolloutHistory = res.history;
+        } catch (e) {
+          if (requestId !== this.requestSeq) return;
+          this.error = e.message;
+          this.rolloutHistory = [];
+        } finally {
+          if (requestId === this.requestSeq) this.setLoading(false);
         }
         return;
       }
@@ -500,6 +537,36 @@ function resourcePanel() {
         this.error = e.message;
       } finally {
         if (requestId === this.requestSeq) this.restarting = false;
+      }
+    },
+
+    // Equivalent to `kubectl rollout undo --to-revision=N` -- patches the
+    // target revision's own pod template back onto the Deployment, then
+    // watches rollout status like scaleWorkload/restartWorkload above.
+    async rollbackWorkload(revision) {
+      const selected = this.$store.app.detailResource;
+      if (!selected || this.rollingBack) return;
+
+      const requestId = ++this.requestSeq;
+      this.rollingBack = true;
+      this.error = null;
+      this.stopRolloutWatch();
+      this.rolloutStatus = null;
+      try {
+        await api.rollbackWorkload({
+          kind: selected.kind,
+          namespace: selected.namespace,
+          name: selected.name,
+          revision,
+          context: this.$store.app.context,
+        });
+        if (requestId !== this.requestSeq) return;
+        this.startRolloutWatch(selected);
+      } catch (e) {
+        if (requestId !== this.requestSeq) return;
+        this.error = e.message;
+      } finally {
+        if (requestId === this.requestSeq) this.rollingBack = false;
       }
     },
 

@@ -239,6 +239,11 @@
             >Restart workload</button>
             <button
               class="krw-context-menu-item"
+              x-show="contextMenu.resource && contextMenu.resource.kind === 'Deployment'"
+              @click="rollbackFromContextMenu()"
+            >Rollback</button>
+            <button
+              class="krw-context-menu-item"
               x-show="contextMenu.resource && contextMenu.resource.kind === 'Pod'"
               @click="viewLogsFromContextMenu()"
             >Get pod logs</button>
@@ -293,6 +298,7 @@
               <span class="krw-detail-mode" x-show="viewMode === 'kubescan'">Kubescape</span>
               <span class="krw-detail-mode" x-show="viewMode === 'scale'">Scale</span>
               <span class="krw-detail-mode" x-show="viewMode === 'restart'">Restart</span>
+              <span class="krw-detail-mode" x-show="viewMode === 'rollback'">Rollback</span>
               <template x-if="viewMode === 'logs'">
                 <span class="krw-detail-mode-group">
                   <span class="krw-detail-mode">Logs:</span>
@@ -687,6 +693,51 @@
                   <div class="krw-scale-rollout" :class="{ 'is-complete': rolloutStatus.complete }">
                     <span class="krw-scale-rollout-spinner" x-show="!rolloutStatus.complete"></span>
                     <span x-text="rolloutStatus.message"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!loading && !error && viewMode === 'rollback'">
+              <div class="krw-scale-panel">
+                <template x-if="rolloutStatus">
+                  <div class="krw-scale-rollout" :class="{ 'is-complete': rolloutStatus.complete }">
+                    <span class="krw-scale-rollout-spinner" x-show="!rolloutStatus.complete"></span>
+                    <span x-text="rolloutStatus.message"></span>
+                  </div>
+                </template>
+                <template x-if="!rolloutStatus && rolloutHistory.length === 0">
+                  <div class="krw-detail-message">No rollout history found.</div>
+                </template>
+                <template x-if="!rolloutStatus && rolloutHistory.length > 0">
+                  <div class="krw-detail-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Revision</th>
+                          <th>Change Cause</th>
+                          <th>Age</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="entry in rolloutHistory" :key="entry.revision">
+                          <tr>
+                            <td x-text="entry.revision"></td>
+                            <td x-text="entry.change_cause || '—'"></td>
+                            <td x-text="entry.age"></td>
+                            <td>
+                              <span class="krw-badge krw-badge-status" x-show="entry.is_current">Current</span>
+                              <button
+                                class="krw-exec-run-btn"
+                                x-show="!entry.is_current"
+                                @click="rollbackWorkload(entry.revision)"
+                                :disabled="rollingBack"
+                              >Rollback</button>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
                   </div>
                 </template>
               </div>
