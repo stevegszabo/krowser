@@ -61,6 +61,36 @@
         </select>
       </div>
 
+      <div class="krw-action-log" @click.outside="closeActionLog()">
+        <button
+          class="krw-pane-toggle-btn"
+          @click="toggleActionLog()"
+          :title="actionLogOpen ? 'Hide recent actions' : 'Show recent actions'"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <template x-if="actionLogOpen">
+          <div class="krw-action-log-panel">
+            <div class="krw-action-log-header">Recent actions</div>
+            <template x-if="actionLog.length === 0">
+              <div class="krw-detail-message">No actions yet this session.</div>
+            </template>
+            <div class="krw-action-log-list">
+              <template x-for="entry in actionLog" :key="entry.timestamp + entry.action + entry.name">
+                <div class="krw-action-log-entry" :class="{ 'is-failed': !entry.success }">
+                  <span class="krw-action-log-time" x-text="new Date(entry.timestamp).toLocaleTimeString()"></span>
+                  <span class="krw-action-log-summary">
+                    <strong x-text="entry.action"></strong>
+                    <span x-text="entry.kind + '/' + entry.name"></span>
+                    <span class="krw-action-log-namespace" x-show="entry.namespace" x-text="'(' + entry.namespace + ')'"></span>
+                  </span>
+                  <span class="krw-action-log-detail" x-text="entry.detail"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
       <button
         class="krw-pane-toggle-btn"
         @click="toggleTheme()"

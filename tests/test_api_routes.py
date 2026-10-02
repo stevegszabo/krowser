@@ -5,6 +5,7 @@ from kubernetes.client import ApiClient
 
 import krowser.api.routes_resource as routes_resource_module
 import krowser.api.routes_resources as routes_resources_module
+from krowser import action_log
 from krowser.api.deps import get_kube_client_manager
 from krowser.k8s.client import ContextInfo
 from krowser.k8s.fetchers import ResourceAccessError
@@ -877,3 +878,55 @@ def test_post_can_i_maps_api_error(client, monkeypatch):
     )
 
     assert res.status_code == 403
+
+
+def test_post_scale_records_a_successful_action(client, monkeypatch):
+    action_log._log.clear()
+    monkeypatch.setattr(routes_resource_module, "scale_workload", lambda *a, **k: 5)
+
+    client.post("/api/scale", json={"kind": "Deployment", "name": "web", "namespace": "ns", "replicas": 5})
+
+    entries = action_log.recent()
+    assert len(entries) == 1
+    assert entries[0]["action"] == "Scale"
+    assert entries[0]["success"] is True
+    assert entries[0]["detail"] == "scaled to 5 replicas"
+
+
+def test_post_scale_records_a_failed_action(client, monkeypatch):
+    action_log._log.clear()
+
+    def _raise(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(routes_resource_module, "scale_workload", _raise)
+
+    client.post("/api/scale", json={"kind": "Deployment", "name": "web", "namespace": "ns", "replicas": 5})
+
+    entries = action_log.recent()
+    assert len(entries) == 1
+    assert entries[0]["success"] is False
+    assert entries[0]["detail"] == "boom"
+
+
+def test_delete_pod_records_a_successful_action(client, monkeypatch):
+    action_log._log.clear()
+    monkeypatch.setattr(routes_resource_module, "terminate_pod", lambda *a, **k: None)
+
+    client.delete("/api/pod", params={"name": "web", "namespace": "ns"})
+
+    entries = action_log.recent()
+    assert len(entries) == 1
+    assert entries[0]["action"] == "Terminate"
+    assert entries[0]["kind"] == "Pod"
+    assert entries[0]["success"] is True
+
+
+def test_get_action_log_returns_recorded_entries(client):
+    action_log._log.clear()
+    action_log.record("Restart", "DaemonSet", "ns", "web", "ctx", True, "restarted")
+
+    res = client.get("/api/action-log")
+
+    assert res.status_code == 200
+    assert res.json()["entries"][0]["action"] == "Restart"

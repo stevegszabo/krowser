@@ -91,6 +91,9 @@ document.addEventListener('alpine:init', () => {
     pollTimer: null,
     requestSeq: 0,
     refreshInFlight: false,
+    actionLogOpen: false,
+    actionLog: [],
+    _actionLogPollTimer: null,
 
     async init() {
       const store = this.$store.app;
@@ -294,6 +297,43 @@ document.addEventListener('alpine:init', () => {
         localStorage.setItem('krowser.theme', store.theme);
       } catch (_) {
         // localStorage unavailable (private browsing, etc.) -- preference just won't persist.
+      }
+    },
+
+    // What krowser itself has done to the cluster this session (Scale,
+    // Restart, Rollback, Terminate) -- see krowser.action_log on the
+    // backend. Only polls while the panel is actually open, same
+    // "don't do work nobody's looking at" principle as everything else that
+    // polls in this app.
+    async toggleActionLog() {
+      this.actionLogOpen = !this.actionLogOpen;
+      if (this.actionLogOpen) {
+        await this.loadActionLog();
+        this._actionLogPollTimer = setInterval(() => this.loadActionLog(), 5000);
+      } else {
+        this.stopActionLogPolling();
+      }
+    },
+
+    closeActionLog() {
+      this.actionLogOpen = false;
+      this.stopActionLogPolling();
+    },
+
+    stopActionLogPolling() {
+      if (this._actionLogPollTimer) {
+        clearInterval(this._actionLogPollTimer);
+        this._actionLogPollTimer = null;
+      }
+    },
+
+    async loadActionLog() {
+      try {
+        const res = await api.getActionLog();
+        this.actionLog = res.entries;
+      } catch (e) {
+        // Silent -- this is a secondary panel with no dedicated error UI; a
+        // failed poll just leaves the last known list showing.
       }
     },
 

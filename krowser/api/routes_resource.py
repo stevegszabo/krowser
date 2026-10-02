@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from krowser import action_log
 from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
 from krowser.k8s.access import can_i
@@ -166,8 +167,10 @@ def delete_pod_route(
     try:
         terminate_pod(mgr, context, namespace, name)
     except Exception as exc:
+        action_log.record("Terminate", "Pod", namespace, name, context, False, str(exc))
         raise to_http_exception(exc) from exc
 
+    action_log.record("Terminate", "Pod", namespace, name, context, True, "terminated")
     return {"status": "terminated"}
 
 
@@ -250,8 +253,12 @@ def post_scale(
     try:
         replicas = scale_workload(mgr, body.context, body.kind, body.namespace, body.name, body.replicas)
     except Exception as exc:
+        action_log.record("Scale", body.kind, body.namespace, body.name, body.context, False, str(exc))
         raise to_http_exception(exc) from exc
 
+    action_log.record(
+        "Scale", body.kind, body.namespace, body.name, body.context, True, f"scaled to {replicas} replicas"
+    )
     return {"replicas": replicas}
 
 
@@ -271,8 +278,10 @@ def post_restart(
     try:
         restart_workload(mgr, body.context, body.kind, body.namespace, body.name)
     except Exception as exc:
+        action_log.record("Restart", body.kind, body.namespace, body.name, body.context, False, str(exc))
         raise to_http_exception(exc) from exc
 
+    action_log.record("Restart", body.kind, body.namespace, body.name, body.context, True, "restarted")
     return {"status": "restarted"}
 
 
@@ -325,10 +334,15 @@ def post_rollback(
     try:
         revision = rollback_workload(mgr, body.context, body.kind, body.namespace, body.name, body.revision)
     except ValueError as exc:
+        action_log.record("Rollback", body.kind, body.namespace, body.name, body.context, False, str(exc))
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
+        action_log.record("Rollback", body.kind, body.namespace, body.name, body.context, False, str(exc))
         raise to_http_exception(exc) from exc
 
+    action_log.record(
+        "Rollback", body.kind, body.namespace, body.name, body.context, True, f"rolled back to revision {revision}"
+    )
     return {"revision": revision}
 
 
@@ -365,3 +379,14 @@ def post_can_i(
         raise to_http_exception(exc) from exc
 
     return {"allowed": allowed}
+
+
+@router.get("/action-log")
+def get_action_log_route():
+    """What krowser itself has done to the cluster this session (Scale,
+    Restart, Rollback, Terminate) -- an in-memory log, newest first, reset
+    on server restart. Exec is deliberately not included here: it's a
+    long-lived interactive session with its own visible exit status in the
+    terminal, not a single discrete action with one outcome to record.
+    """
+    return {"entries": action_log.recent()}
