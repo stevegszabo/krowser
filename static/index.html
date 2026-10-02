@@ -25,6 +25,7 @@
     x-data="appRoot()"
     x-init="init()"
     @select-type.window="onTypeSelect($event.detail)"
+    @show-action-history.window="showActionHistoryFor($event.detail)"
     :class="{ 'krw-busy': $store.app.busy }"
     x-effect="document.documentElement.setAttribute('data-theme', $store.app.theme)"
   >
@@ -73,11 +74,20 @@
         <template x-if="actionLogOpen">
           <div class="krw-action-log-panel">
             <div class="krw-action-log-header">Recent actions</div>
+            <input
+              type="text"
+              class="krw-log-filter-input krw-action-log-filter-input"
+              placeholder="Filter by name&hellip;"
+              x-model="actionLogFilter"
+            />
             <template x-if="actionLog.length === 0">
               <div class="krw-detail-message">No actions yet this session.</div>
             </template>
+            <template x-if="actionLog.length > 0 && filteredActionLog.length === 0">
+              <div class="krw-detail-message">No actions match "<span x-text="actionLogFilter"></span>".</div>
+            </template>
             <div class="krw-action-log-list">
-              <template x-for="entry in actionLog" :key="entry.timestamp + entry.action + entry.name">
+              <template x-for="entry in filteredActionLog" :key="entry.timestamp + entry.action + entry.name">
                 <div class="krw-action-log-entry" :class="{ 'is-failed': !entry.success }">
                   <span class="krw-action-log-time" x-text="new Date(entry.timestamp).toLocaleTimeString()"></span>
                   <span class="krw-action-log-summary">
@@ -258,6 +268,11 @@
               @click="selectFromContextMenu()"
               x-text="'Get ' + (contextMenu.resource ? contextMenu.resource.kind.toLowerCase() : 'resource')"
             ></button>
+            <button
+              class="krw-context-menu-item"
+              x-show="contextMenu.resource && (contextMenu.resource.kind === 'Pod' || ['Deployment', 'StatefulSet', 'DaemonSet'].includes(contextMenu.resource.kind))"
+              @click="actionHistoryFromContextMenu()"
+            >Action history</button>
             <button
               class="krw-context-menu-item"
               x-show="contextMenu.resource && ['Deployment', 'StatefulSet'].includes(contextMenu.resource.kind)"

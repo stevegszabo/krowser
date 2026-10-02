@@ -93,7 +93,21 @@ document.addEventListener('alpine:init', () => {
     refreshInFlight: false,
     actionLogOpen: false,
     actionLog: [],
+    actionLogFilter: '',
     _actionLogPollTimer: null,
+
+    // Plain substring match across every field worth searching -- same
+    // "simple text filter" shape as the graph's own name filter box, rather
+    // than a structured per-field filter UI.
+    get filteredActionLog() {
+      const filter = this.actionLogFilter.trim().toLowerCase();
+      if (!filter) return this.actionLog;
+      return this.actionLog.filter((entry) =>
+        `${entry.kind} ${entry.namespace} ${entry.name} ${entry.action} ${entry.detail}`
+          .toLowerCase()
+          .includes(filter)
+      );
+    },
 
     async init() {
       const store = this.$store.app;
@@ -306,13 +320,31 @@ document.addEventListener('alpine:init', () => {
     // "don't do work nobody's looking at" principle as everything else that
     // polls in this app.
     async toggleActionLog() {
-      this.actionLogOpen = !this.actionLogOpen;
       if (this.actionLogOpen) {
-        await this.loadActionLog();
-        this._actionLogPollTimer = setInterval(() => this.loadActionLog(), 5000);
+        this.closeActionLog();
       } else {
-        this.stopActionLogPolling();
+        // The topbar icon always shows everything -- any filter left over
+        // from a previous "Action history" context-menu open (see
+        // showActionHistoryFor()) shouldn't silently narrow this one too.
+        this.actionLogFilter = '';
+        await this.openActionLog();
       }
+    },
+
+    async openActionLog() {
+      if (this.actionLogOpen) return;
+      this.actionLogOpen = true;
+      await this.loadActionLog();
+      this._actionLogPollTimer = setInterval(() => this.loadActionLog(), 5000);
+    },
+
+    // Fired by graphView.js's "Action history" context-menu item (see its
+    // 'show-action-history' $dispatch, listened for on this root element) --
+    // narrows the same panel to just this resource rather than opening a
+    // separate view, so there's only ever one action-log UI to maintain.
+    async showActionHistoryFor(resource) {
+      this.actionLogFilter = resource.name;
+      await this.openActionLog();
     },
 
     closeActionLog() {

@@ -183,16 +183,19 @@ function graphView() {
         // pod); workload controller kinds get one extra row (Scan with
         // Kubescape); Deployment/StatefulSet get one extra row (Scale
         // workload); Deployment/StatefulSet/DaemonSet get one extra row
-        // (Restart workload); Deployment gets one extra row (Rollback); all
-        // are on top of the two universal rows ("Get <kind>" and "Get
-        // events").
+        // (Restart workload); Deployment gets one extra row (Rollback);
+        // Pod/Deployment/StatefulSet/DaemonSet get one extra row (Action
+        // history, since those are the only kinds the action log ever
+        // records); all are on top of the two universal rows ("Get <kind>"
+        // and "Get events").
         const itemCount =
           2 +
           (data.kind === 'Pod' ? 5 : 0) +
           (WORKLOAD_CONTROLLER_KINDS.includes(data.kind) ? 1 : 0) +
           (SCALABLE_KINDS.includes(data.kind) ? 1 : 0) +
           (RESTARTABLE_KINDS.includes(data.kind) ? 1 : 0) +
-          (ROLLBACK_KINDS.includes(data.kind) ? 1 : 0);
+          (ROLLBACK_KINDS.includes(data.kind) ? 1 : 0) +
+          (data.kind === 'Pod' || RESTARTABLE_KINDS.includes(data.kind) ? 1 : 0);
         const x = Math.min(evt.clientX, window.innerWidth - 240);
         const y = Math.min(evt.clientY, window.innerHeight - (itemCount * 36 + 8));
         this.contextMenu = {
@@ -700,6 +703,15 @@ function graphView() {
     eventsFromContextMenu() {
       this.$store.app.selectedResource = this.contextMenu.resource;
       this.$store.app.detailResource = { ...this.contextMenu.resource, view: 'events' };
+      this.contextMenu.visible = false;
+    },
+
+    // Doesn't open the detail pane -- unlike every action above, this isn't
+    // a per-resource view, it just narrows the topbar's existing Recent
+    // actions panel (see app.js's showActionHistoryFor(), which the
+    // 'show-action-history' event triggers) to this one resource's name.
+    actionHistoryFromContextMenu() {
+      this.$dispatch('show-action-history', this.contextMenu.resource);
       this.contextMenu.visible = false;
     },
 
