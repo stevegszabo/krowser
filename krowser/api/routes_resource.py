@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from krowser.api.deps import get_kube_client_manager
 from krowser.api.errors import to_http_exception
+from krowser.k8s.access import can_i
 from krowser.k8s.client import KubeClientManager
 from krowser.k8s.custom_resources import get_custom_resource, resolve_served_version
 from krowser.k8s.getters import GETTERS_BY_KIND, get_crd, get_pod_logs, get_resource_events
@@ -329,3 +330,38 @@ def post_rollback(
         raise to_http_exception(exc) from exc
 
     return {"revision": revision}
+
+
+class AccessCheck(BaseModel):
+    verb: str
+    group: str
+    resource: str
+    subresource: str | None = None
+    namespace: str | None = None
+
+
+class AccessCheckRequest(BaseModel):
+    checks: list[AccessCheck]
+    context: str | None = None
+
+
+@router.post("/can-i")
+def post_can_i(
+    body: AccessCheckRequest,
+    mgr: KubeClientManager = Depends(get_kube_client_manager),
+):
+    """Batches what would otherwise be one `kubectl auth can-i`-equivalent
+    round trip per action -- the frontend calls this once per context menu
+    open with every check that menu's visible actions need, so a mutating
+    action can be grayed out up front instead of only failing with a 403
+    after the fact.
+    """
+    try:
+        allowed = [
+            can_i(mgr, body.context, c.verb, c.group, c.resource, c.subresource, c.namespace)
+            for c in body.checks
+        ]
+    except Exception as exc:
+        raise to_http_exception(exc) from exc
+
+    return {"allowed": allowed}

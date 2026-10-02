@@ -101,6 +101,9 @@ class KubeClientManager:
     def apiextensions_v1(self, context: str | None) -> k8s_client.ApiextensionsV1Api:
         return k8s_client.ApiextensionsV1Api(self.api_client_for(context))
 
+    def authorization_v1(self, context: str | None) -> k8s_client.AuthorizationV1Api:
+        return k8s_client.AuthorizationV1Api(self.api_client_for(context))
+
     # CustomObjectsApi has no generated model classes (unlike every other
     # *Api client above) -- see krowser.k8s.custom_resources.AttrDict for how
     # its raw dict responses are bridged into the dot-access shape the rest

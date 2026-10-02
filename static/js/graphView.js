@@ -34,6 +34,18 @@ const RESTARTABLE_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet'];
 // Kept in sync with krowser.k8s.rollback.ROLLBACK_KINDS.
 const ROLLBACK_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet'];
 
+// The apps/v1 plural resource name for each of SCALABLE_KINDS/
+// RESTARTABLE_KINDS/ROLLBACK_KINDS, needed for SelfSubjectAccessReview
+// checks (see checksForResource() below) -- plain lowercase+'s' happens to
+// be correct for all three, but spelled out explicitly rather than computed
+// so a future kind with an irregular plural doesn't silently check the
+// wrong resource name.
+const APPS_PLURAL_BY_KIND = {
+  Deployment: 'deployments',
+  StatefulSet: 'statefulsets',
+  DaemonSet: 'daemonsets',
+};
+
 // Keep in sync with the cytoscape node style's `height` below -- see
 // applyMeasuredHeights() for why this is only a fallback, not the truth.
 const DEFAULT_NODE_HEIGHT = 80;
@@ -66,6 +78,18 @@ function graphView() {
     contextMenu: { visible: false, x: 0, y: 0, resource: null },
     hoveredNode: null,
     hasNoFilterMatches: false,
+    // Keyed by permissionKey() below, true/false once a SelfSubjectAccessReview
+    // has answered for that exact (verb, group, resource, subresource,
+    // namespace) combination -- missing key means "not checked yet", which
+    // canPerform() below treats as allowed (optimistic) rather than
+    // disabled, so a transient check failure or a brand-new namespace never
+    // permanently blocks an action the user may well be allowed to do; a
+    // real denial still just fails with the existing error banner, same as
+    // every action before this cache existed. Never reset across
+    // namespace/context switches within a session -- RBAC essentially never
+    // changes mid-session, and re-checking on every switch would just be
+    // wasted round trips.
+    permissionCache: {},
 
     init() {
       this.cy = cytoscape({
@@ -187,6 +211,7 @@ function graphView() {
             crd: data.crd || null,
           },
         };
+        this.ensurePermissionsChecked(this.checksForResource(data));
       });
 
       // Any pan/zoom or background tap invalidates the menu's position/relevance.
@@ -261,6 +286,99 @@ function graphView() {
       if (!selected || !selected.id) return;
       const node = this.cy.getElementById(selected.id);
       if (node.nonempty()) node.data('is_selected', true);
+    },
+
+    // Includes the context explicitly -- the exact same (verb, resource,
+    // namespace) combination can have a different answer in a different
+    // cluster, so a context switch must never reuse another context's
+    // cached result.
+    permissionKey(check) {
+      return [
+        this.$store.app.context || '',
+        check.verb,
+        check.group,
+        check.resource,
+        check.subresource || '',
+        check.namespace || '',
+      ].join('|');
+    },
+
+    // Every mutating/attaching action a right-clicked resource's kind
+    // offers in the context menu -- see ensurePermissionsChecked()'s caller,
+    // which fires this on every contextmenu open. Scale/Restart/Rollback
+    // reuse the exact same RESTARTABLE_KINDS-shaped check for Restart and
+    // Rollback (both just patch spec.template), so there's no duplicate
+    // round trip for showing both in the same menu.
+    checksForResource(data) {
+      const checks = [];
+      const plural = APPS_PLURAL_BY_KIND[data.kind];
+      if (data.kind === 'Pod') {
+        checks.push({ verb: 'delete', group: '', resource: 'pods', namespace: data.namespace });
+        checks.push({ verb: 'create', group: '', resource: 'pods', subresource: 'exec', namespace: data.namespace });
+      }
+      if (SCALABLE_KINDS.includes(data.kind)) {
+        checks.push({ verb: 'update', group: 'apps', resource: plural, subresource: 'scale', namespace: data.namespace });
+      }
+      if (RESTARTABLE_KINDS.includes(data.kind) || ROLLBACK_KINDS.includes(data.kind)) {
+        checks.push({ verb: 'patch', group: 'apps', resource: plural, namespace: data.namespace });
+      }
+      return checks;
+    },
+
+    async ensurePermissionsChecked(checks) {
+      const uncached = checks.filter((c) => !(this.permissionKey(c) in this.permissionCache));
+      if (uncached.length === 0) return;
+      try {
+        const res = await api.canI({ checks: uncached, context: this.$store.app.context });
+        uncached.forEach((c, i) => {
+          this.permissionCache[this.permissionKey(c)] = res.allowed[i];
+        });
+      } catch (e) {
+        // Leave these uncached rather than caching a failure -- a transient
+        // network/API hiccup here shouldn't permanently disable an action
+        // the user might actually be allowed to perform.
+      }
+    },
+
+    // Only ever returns false on a *confirmed* denial -- an unchecked (not
+    // yet in permissionCache) action stays enabled, see permissionCache's
+    // own comment for why.
+    canPerform(check) {
+      return this.permissionCache[this.permissionKey(check)] !== false;
+    },
+
+    // Thin per-action wrappers around canPerform(), reading the currently
+    // open context menu's resource -- used directly from the menu template
+    // (:disabled="!canScaleMenuItem()" etc.) so each button's markup doesn't
+    // need to spell out its own check object.
+    canScaleMenuItem() {
+      const r = this.contextMenu.resource;
+      if (!r) return true;
+      return this.canPerform({
+        verb: 'update',
+        group: 'apps',
+        resource: APPS_PLURAL_BY_KIND[r.kind],
+        subresource: 'scale',
+        namespace: r.namespace,
+      });
+    },
+
+    canPatchWorkloadMenuItem() {
+      const r = this.contextMenu.resource;
+      if (!r) return true;
+      return this.canPerform({ verb: 'patch', group: 'apps', resource: APPS_PLURAL_BY_KIND[r.kind], namespace: r.namespace });
+    },
+
+    canTerminateMenuItem() {
+      const r = this.contextMenu.resource;
+      if (!r) return true;
+      return this.canPerform({ verb: 'delete', group: '', resource: 'pods', namespace: r.namespace });
+    },
+
+    canExecMenuItem() {
+      const r = this.contextMenu.resource;
+      if (!r) return true;
+      return this.canPerform({ verb: 'create', group: '', resource: 'pods', subresource: 'exec', namespace: r.namespace });
     },
 
     renderGraph(graph) {

@@ -313,6 +313,14 @@ html, body {
   background: var(--hover-bg);
   color: var(--teal-dark);
 }
+.krw-context-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.krw-context-menu-item:disabled:hover {
+  background: transparent;
+  color: var(--ink);
+}
 
 .krw-context-menu-item-danger {
   margin-top: 4px;

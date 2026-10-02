@@ -834,3 +834,46 @@ def test_post_rollback_maps_api_error(client, monkeypatch):
     )
 
     assert res.status_code == 403
+
+
+def test_post_can_i_returns_results_in_request_order(client, monkeypatch):
+    captured = []
+
+    def fake_can_i(mgr, context, verb, group, resource, subresource=None, namespace=None):
+        captured.append((verb, group, resource, subresource, namespace))
+        return verb == "delete"
+
+    monkeypatch.setattr(routes_resource_module, "can_i", fake_can_i)
+
+    res = client.post(
+        "/api/can-i",
+        json={
+            "checks": [
+                {"verb": "delete", "group": "", "resource": "pods", "namespace": "ns"},
+                {"verb": "create", "group": "", "resource": "pods", "subresource": "exec", "namespace": "ns"},
+            ]
+        },
+    )
+
+    assert res.status_code == 200
+    assert res.json() == {"allowed": [True, False]}
+    assert captured == [
+        ("delete", "", "pods", None, "ns"),
+        ("create", "", "pods", "exec", "ns"),
+    ]
+
+
+def test_post_can_i_maps_api_error(client, monkeypatch):
+    from kubernetes.client.rest import ApiException
+
+    def fake_can_i(mgr, context, verb, group, resource, subresource=None, namespace=None):
+        raise ApiException(status=403, reason="Forbidden")
+
+    monkeypatch.setattr(routes_resource_module, "can_i", fake_can_i)
+
+    res = client.post(
+        "/api/can-i",
+        json={"checks": [{"verb": "delete", "group": "", "resource": "pods"}]},
+    )
+
+    assert res.status_code == 403
