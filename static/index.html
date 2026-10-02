@@ -239,7 +239,7 @@
             >Restart workload</button>
             <button
               class="krw-context-menu-item"
-              x-show="contextMenu.resource && contextMenu.resource.kind === 'Deployment'"
+              x-show="contextMenu.resource && ['Deployment', 'StatefulSet', 'DaemonSet'].includes(contextMenu.resource.kind)"
               @click="rollbackFromContextMenu()"
             >Rollback</button>
             <button
@@ -365,6 +365,11 @@
                 placeholder="Filter logs&hellip;"
                 x-model="logFilter"
               />
+              <label class="krw-scan-command-toggle">
+                <input type="checkbox" :checked="following" @change="toggleFollowLogs()" />
+                Follow
+              </label>
+              <span class="krw-exec-status" x-show="following">streaming&hellip;</span>
             </div>
           </template>
           <template x-if="viewMode === 'exec'">
@@ -557,7 +562,7 @@
               </div>
             </template>
             <template x-if="!loading && !error && viewMode === 'logs'">
-              <pre class="krw-logs" x-html="filteredLogsHtml"></pre>
+              <pre class="krw-logs" x-ref="logsPre" x-html="filteredLogsHtml"></pre>
             </template>
             <template x-if="!loading && !error && viewMode === 'exec'">
               <div class="krw-exec-terminal" x-ref="execTerminal"></div>

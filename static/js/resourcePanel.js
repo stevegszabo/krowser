@@ -52,6 +52,7 @@ function resourcePanel() {
     eventsRows: [],
     logsText: '',
     logFilter: '',
+    following: false,
     execCommand: '',
     execRunning: false,
     execStarted: false,
@@ -86,6 +87,7 @@ function resourcePanel() {
     _lastRollbackKey: null,
     _rolloutPollTimer: null,
     _execSocket: null,
+    _logSocket: null,
     _execTerm: null,
     _execFitAddon: null,
     _execResizeObserver: null,
@@ -174,6 +176,7 @@ function resourcePanel() {
         this.rolloutHistory = [];
         this.rolloutStatus = null;
         this.stopRolloutWatch();
+        this.stopFollowLogs();
         this.setLoading(false);
         this.resetExec();
         return;
@@ -189,6 +192,15 @@ function resourcePanel() {
       this._lastResourceId = selected.id;
 
       this.viewMode = selected.view || 'yaml';
+
+      // Any live log-follow connection belongs to whatever pod/container was
+      // selected when Follow was turned on -- every load() call means the
+      // selection changed (load() only runs on a detailResource reference
+      // change, see init()'s $watch), so it's always stale here, including
+      // when re-entering 'logs' itself for a different pod/container. The
+      // user re-opts into Follow for the new selection, same as Scale's
+      // in-flight guard resetting rather than carrying over.
+      this.stopFollowLogs();
 
       if (this.viewMode === 'exec') {
         this.setLoading(false);
@@ -721,6 +733,96 @@ function resourcePanel() {
       this.execExitInfo = '';
       this.execFailed = false;
       this.execStarted = false;
+    },
+
+    toggleFollowLogs() {
+      if (this.following) {
+        this.stopFollowLogs();
+      } else {
+        this.startFollowLogs();
+      }
+    },
+
+    // Opens a live WebSocket to the backend's `kubectl logs -f`-style bridge
+    // and appends each chunk to the existing static logsText -- the initial
+    // last-100-lines fetch in load() stays exactly as it was, Follow is
+    // purely additive on top of it, same "explicit opt-in" shape as Exec's
+    // own Run button.
+    startFollowLogs() {
+      const selected = this.$store.app.detailResource;
+      if (!selected || this.following) return;
+      this.following = true;
+
+      // Jump to the bottom right away -- turning Follow on is itself a
+      // request to see the most recent activity, regardless of where the
+      // viewer happened to be scrolled to (appendLogChunk()'s own
+      // stick-to-bottom check only fires on the chunks that arrive after
+      // this point).
+      this.$nextTick(() => this.scrollLogsToBottom());
+
+      const params = new URLSearchParams({
+        name: selected.name,
+        namespace: selected.namespace,
+        container: selected.container,
+      });
+      if (this.$store.app.context) params.set('context', this.$store.app.context);
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${window.location.host}/api/pod-logs-stream?${params.toString()}`);
+      this._logSocket = ws;
+
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === 'stdout') {
+          this.appendLogChunk(msg.data);
+        } else if (msg.type === 'error') {
+          this.error = msg.data;
+          this.following = false;
+        } else if (msg.type === 'exit') {
+          this.following = false;
+        }
+      };
+      ws.onclose = () => {
+        this.following = false;
+      };
+      ws.onerror = () => {
+        this.following = false;
+      };
+    },
+
+    stopFollowLogs() {
+      if (this._logSocket) {
+        this._logSocket.close();
+        this._logSocket = null;
+      }
+      this.following = false;
+    },
+
+    // The scrollABLE element is .krw-detail-body (see its `overflow: auto`
+    // in styles.css) -- the <pre> itself just grows to fit its content, so
+    // scrollTop/scrollHeight on the <pre> are both meaningless (always 0 /
+    // equal to clientHeight) and silently no-op when set.
+    logsScrollContainer() {
+      const pre = this.$refs.logsPre;
+      return pre ? pre.parentElement : null;
+    },
+
+    scrollLogsToBottom() {
+      const container = this.logsScrollContainer();
+      if (container) container.scrollTop = container.scrollHeight;
+    },
+
+    // Mirrors a terminal's "stick to bottom" behavior: only auto-scrolls if
+    // the viewer was already at the bottom before this chunk arrived, so
+    // scrolling up to read earlier lines during a live Follow isn't
+    // constantly yanked back down by new ones arriving underneath it.
+    appendLogChunk(text) {
+      const container = this.logsScrollContainer();
+      const wasAtBottom =
+        container && container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+      this.logsText += text;
+      if (wasAtBottom) {
+        this.$nextTick(() => this.scrollLogsToBottom());
+      }
     },
 
     handleTreeClick(event) {

@@ -31,10 +31,8 @@ const SCALABLE_KINDS = ['Deployment', 'StatefulSet'];
 // it's not in SCALABLE_KINDS above) but does have a pod template to roll.
 const RESTARTABLE_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet'];
 
-// Kept in sync with krowser.k8s.rollback.ROLLBACK_KINDS -- StatefulSet and
-// DaemonSet keep their history as ControllerRevisions (an opaque patch blob)
-// rather than actual ReplicaSets, so only Deployment rollback is supported.
-const ROLLBACK_KINDS = ['Deployment'];
+// Kept in sync with krowser.k8s.rollback.ROLLBACK_KINDS.
+const ROLLBACK_KINDS = ['Deployment', 'StatefulSet', 'DaemonSet'];
 
 // Keep in sync with the cytoscape node style's `height` below -- see
 // applyMeasuredHeights() for why this is only a fallback, not the truth.
